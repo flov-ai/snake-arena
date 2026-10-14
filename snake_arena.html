@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Snake Arena</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Familjen+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: header; arena with three columns (board A · duel stats · board B); below, per-player latency and log.
+   Under 1150px the stats drop below the two boards, under 700px everything stacks with the stats first. */
+:root{
+  --bg:#f3f3f2; --panel:#ffffff; --sunk:#f5f5f5; --fg:#111111; --muted:#6b6b6b; --line:#e4e4e4;
+  --board:#f5f5f5; --cell:#ebebeb; --food:#e5402a;
+  --a:#22a356; --a-head:#0f6b35; --a-stat:#159149;
+  --b:#3a6be0; --b-head:#1b3d8f; --b-stat:#2c5fd4;
+  --accent:#111111; --on-accent:#ffffff; --spark:#d6d6d6; --ok:#159149; --bad:#d33a24; --warn:#e07b12;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"Familjen Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e0e0e; --panel:#151515; --sunk:#1c1c1c; --fg:#f2f2f2; --muted:#9a9a9a; --line:#2a2a2a;
+  --board:#121212; --cell:#1e1e1e; --food:#ff5a43;
+  --a:#3fcf7a; --a-head:#a3f0c2; --a-stat:#4ed283;
+  --b:#6f9bff; --b-head:#c9d9ff; --b-stat:#86abff;
+  --accent:#f2f2f2; --on-accent:#111111; --spark:#3a3a3a; --ok:#4ed283; --bad:#ff6a52; --warn:#ffa043; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e0e0e; --panel:#151515; --sunk:#1c1c1c; --fg:#f2f2f2; --muted:#9a9a9a; --line:#2a2a2a;
+  --board:#121212; --cell:#1e1e1e; --food:#ff5a43;
+  --a:#3fcf7a; --a-head:#a3f0c2; --a-stat:#4ed283;
+  --b:#6f9bff; --b-head:#c9d9ff; --b-stat:#86abff;
+  --accent:#f2f2f2; --on-accent:#111111; --spark:#3a3a3a; --ok:#4ed283; --bad:#ff6a52; --warn:#ffa043; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;margin:0;padding-block:24px 48px;padding-inline:16px}
+.wrap{max-width:1600px;margin:0 auto;display:grid;gap:16px}
+
+/* header */
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:16px 24px;align-items:start}
+.h1-ic{width:26px;height:26px;flex:none}
+h1{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:700;margin:0;letter-spacing:-.015em;text-wrap:balance}
+.sub{margin:4px 0 0;color:var(--muted);max-width:60ch;line-height:1.45}
+.top-right{display:flex;flex-direction:column;align-items:flex-end;gap:12px;min-width:0}
+.gh{display:grid;grid-template-columns:repeat(2,auto);gap:8px;justify-content:end;align-items:stretch}
+.gh > *,.api-wrap > .gh-btn{width:100%}
+.gh .gh-btn,.gh #resetBtn{justify-content:center}
+.gh > a.gh-btn{grid-column:1/-1}
+.gh-btn{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);text-decoration:none;font-size:13px;font-weight:500}
+.gh-btn:hover{border-color:var(--accent)}
+.gh-btn svg{width:16px;height:16px;flex:none}
+button.gh-btn{cursor:pointer}
+[data-icon]{display:inline-flex;align-items:center;gap:7px}
+button[data-icon]{justify-content:center}
+.ic{width:15px;height:15px;flex:none}
+.label .ic{width:14px;height:14px;color:var(--fg);opacity:.7}
+.api-wrap{position:relative}
+.popover select{width:100%}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.fieldset{display:grid;gap:8px;min-width:0}
+.popover .check{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:13px;margin-top:4px}
+.popover input[type=checkbox]{width:16px;flex:none}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.popover{position:absolute;right:0;top:calc(100% + 8px);z-index:10;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:16px;display:grid;gap:8px;text-align:left}
+.pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.icon-btn{width:28px;height:28px;padding:0;display:grid;place-items:center;border-color:transparent;background:transparent;color:var(--muted)}
+.icon-btn:hover{color:var(--fg);border-color:var(--line)}
+.icon-btn svg{width:16px;height:16px}
+.popover label{font-size:12px;color:var(--muted);font-weight:500}
+.popover input{width:100%}
+.popover .row{display:flex;gap:8px}
+.popover .row input{flex:1;min-width:0}
+.popover .end{justify-content:flex-end;margin-top:4px}
+.popover .split{justify-content:space-between}
+.note{font-size:12px;color:var(--muted);margin:0;line-height:1.45}
+.note code{font-family:var(--mono);font-size:11px}
+.caption.bad{color:var(--bad)}
+button:disabled{opacity:.45;cursor:default}
+button:disabled:hover{border-color:var(--line)}
+@media (max-width:600px){.gh-btn span{display:none}.sub{font-size:13px}
+  .top{grid-template-columns:minmax(0,1fr)}.top-right{align-items:stretch}.gh{justify-content:stretch;grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* controls */
+button,select,input{font:inherit;font-size:13px;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 10px}
+input[type=number]{font-family:var(--mono);font-size:12.5px;width:84px}
+input[type=checkbox]{padding:0;width:16px;height:16px;accent-color:var(--accent)}
+button{cursor:pointer;font-weight:500}
+button:hover{border-color:var(--accent)}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.primary:hover{filter:brightness(1.08)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0}
+.caption{font-size:12px;color:var(--muted);margin:0}
+.caption i{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+.check{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);line-height:1.35}
+.check input{flex:none}
+
+/* ---------- arena: board A · stats · board B ---------- */
+.arena{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,400px) minmax(0,1fr);grid-template-areas:"a s b";gap:16px;align-items:stretch}
+#colA{grid-area:a} #duel{grid-area:s} #colB{grid-area:b}
+@media (max-width:1150px){.arena{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"a b" "s s"}}
+@media (max-width:700px){.arena{grid-template-columns:minmax(0,1fr);grid-template-areas:"s" "a" "b"}}
+
+.player-part[data-p="A"]{--snake:var(--a);--head:var(--a-head);--stat:var(--a-stat)}
+.player-part[data-p="B"]{--snake:var(--b);--head:var(--b-head);--stat:var(--b-stat)}
+.player-part.dead{--stat:var(--bad)}
+.p-badge{display:grid;place-items:center;width:28px;height:28px;border-radius:6px;background:var(--snake);color:var(--panel);font-weight:700;font-size:15px;flex:none}
+
+.board-col{display:flex;flex-direction:column;gap:14px;border-top:3px solid var(--snake)}
+.p-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.p-id{display:flex;align-items:center;gap:10px;min-width:0}
+.p-meta{display:grid;gap:1px;min-width:0}
+.p-name{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p-fmt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+canvas{width:100%;max-width:100%;aspect-ratio:1;display:block;border-radius:6px;background:var(--board)}
+.board-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.board-foot .stack{display:grid;gap:6px;justify-items:start;min-width:0}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.alive{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.dead{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.pill.limit{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.dpad{display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(2,32px);gap:4px}
+.dpad button{padding:0;display:grid;place-items:center}
+.dpad svg{width:16px;height:16px}
+.dpad [data-dir="right"] svg{transform:rotate(90deg)}
+.dpad [data-dir="down"] svg{transform:rotate(180deg)}
+.dpad [data-dir="left"] svg{transform:rotate(270deg)}
+.dpad [data-dir="up"]{grid-column:2;grid-row:1}
+.dpad [data-dir="left"]{grid-column:1;grid-row:2}
+.dpad [data-dir="down"]{grid-column:2;grid-row:2}
+.dpad [data-dir="right"]{grid-column:3;grid-row:2}
+
+/* ---------- duel stats (middle column) ---------- */
+.duel{display:flex;flex-direction:column;gap:14px}
+.duel-head{display:grid;gap:4px}
+.duel-btns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.duel-btns button{padding-inline:8px}
+.vs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}
+.vs-side{display:grid;justify-items:center;gap:8px;min-width:0;text-align:center}
+.vs-num{font-size:clamp(48px,5vw,64px);font-weight:700;line-height:.85;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.vs-side.a .vs-num{color:var(--a-stat)} .vs-side.b .vs-num{color:var(--b-stat)}
+.vs-side .p-badge.a{background:var(--a)} .vs-side .p-badge.b{background:var(--b)}
+.vs-state{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.verdict-row{display:grid;justify-items:center;gap:4px;text-align:center}
+.verdict{font-weight:600;font-size:13px;padding:5px 12px;border-radius:99px;background:var(--sunk);white-space:nowrap}
+.verdict.a{background:color-mix(in srgb,var(--a) 16%,transparent);color:var(--a-stat)}
+.verdict.b{background:color-mix(in srgb,var(--b) 16%,transparent);color:var(--b-stat)}
+.verdict-why{font-size:12px;color:var(--muted);min-height:1em}
+.cmp-wrap{overflow-x:auto}
+table.cmp{width:100%;max-width:820px;margin:0 auto;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.cmp th,.cmp td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.cmp thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.cmp thead th:first-child{text-align:left}
+.cmp thead th.a{color:var(--a-stat)} .cmp thead th.b{color:var(--b-stat)}
+.cmp tbody th{text-align:left;color:var(--muted);font-weight:500;white-space:normal}
+.cmp tbody tr:last-child th,.cmp tbody tr:last-child td{border-bottom:0}
+.cmp td.win{font-weight:700}
+.cmp td.win.a{color:var(--a-stat)} .cmp td.win.b{color:var(--b-stat)}
+.cmp td.win::before{content:"▲ ";font-size:9px;vertical-align:1px}
+.duel-opts{display:grid;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+
+/* ---------- per-player details ---------- */
+.details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+@media (max-width:700px){.details{grid-template-columns:minmax(0,1fr)}}
+.detail{display:grid;gap:16px;min-width:0}
+.detail .card{display:grid;gap:10px;align-content:start}
+.detail-title{display:flex;align-items:center;gap:8px;font-weight:600}
+.detail-title .p-badge{width:22px;height:22px;font-size:12px;border-radius:5px}
+.lat-row{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline}
+.lat-row b{font-size:18px;font-weight:600;color:var(--stat);font-variant-numeric:tabular-nums}
+.lat-row span{font-size:12px;color:var(--muted)}
+.spark{position:relative;height:46px}
+.spark svg{width:100%;height:100%;display:block;overflow:visible}
+.spark .empty{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px}
+.extra{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+body:not(.details-on) .extra{display:none}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.section-head code{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+/* code boxes with copy button */
+.codebox{position:relative;min-width:0}
+.codebox pre,.codebox .log{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:12px 46px 12px 12px;overflow:auto;max-height:300px;font:12px/1.5 var(--mono);white-space:pre;min-height:44px}
+.codebox .wraptext{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px}
+.ascii{letter-spacing:.3em;line-height:1.25;font-size:13px}
+.copy{position:absolute;top:6px;right:6px;width:30px;height:30px;display:grid;place-items:center;padding:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+.copy:hover{color:var(--fg)}
+.copy svg{width:15px;height:15px}
+.copy .i-check{display:none}
+.copy.done{color:var(--ok);border-color:var(--ok)}
+.copy.done .i-copy{display:none}
+.copy.done .i-check{display:block}
+.codebox .log{white-space:normal;font-family:var(--sans);padding:6px 46px 6px 6px;display:flex;flex-direction:column;gap:2px;height:260px;max-height:260px}
+.log-row{display:grid;grid-template-columns:40px minmax(64px,auto) minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 8px;border-radius:5px;font-size:12.5px}
+.log-row:first-child{background:var(--panel)}
+.log-n{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.log-dir{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.log-dir i{display:grid;place-items:center;width:20px;height:20px;border-radius:4px;background:var(--panel);border:1px solid var(--line)}
+.log-dir svg{width:12px;height:12px}
+.rot-right svg{transform:rotate(90deg)} .rot-down svg{transform:rotate(180deg)} .rot-left svg{transform:rotate(270deg)}
+.chip{justify-self:start;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted)}
+.chip.ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.chip.bad{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.chip.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.log-ms{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.log-note{padding:6px 10px;margin:2px 0;font-size:12px;line-height:1.45;color:var(--muted);border-left:2px solid var(--line)}
+.log-note.bad{color:var(--bad);border-left-color:var(--bad)}
+.log-note.ok{color:var(--ok);border-left-color:var(--ok)}
+.ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><svg class="h1-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Snake Arena</h1>
+      <p class="sub">1 vs 1 duel between two LLMs: two independent snake games that start at the same time. Each response advances one tick and, with the same seed, food appears in the same order for both models.</p>
+    </div>
+    <div class="top-right">
+    <div class="gh">
+      <a class="gh-btn" href="https://github.com/flov-ai/snake-arena" target="_blank" rel="noopener" aria-label="GitHub repository">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        <span>flov-ai/snake-arena</span>
+      </a>
+      <div class="api-wrap" id="setWrap">
+        <button type="button" class="gh-btn" id="setBtn" aria-expanded="false" aria-controls="setPanel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"></path></svg>
+          <span>Settings</span>
+        </button>
+        <div class="popover" id="setPanel" hidden>
+          <div class="pop-head">
+            <p class="label" data-icon="sliders">Game settings</p>
+            <button type="button" class="icon-btn" id="setClose" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+          </div>
+          <div class="two-col">
+            <div class="fieldset"><label for="seed">Seed</label><input id="seed" type="number" value="42"></div>
+            <div class="fieldset"><label for="size">Board size</label><select id="size"><option>8</option><option>10</option><option selected>12</option><option>16</option><option>20</option></select></div>
+          </div>
+          <div class="two-col">
+            <div class="fieldset"><label for="mode">Mode</label><select id="mode"><option value="turn" selected>Turn-based</option><option value="realtime">Real time</option></select></div>
+            <div class="fieldset"><label for="maxTicks">Tick limit</label><input id="maxTicks" type="number" min="0" value="0" style="width:100%"></div>
+          </div>
+          <label class="check" for="hints"><input id="hints" type="checkbox"> Hints in the state (dx/dy and neighbouring cells)</label>
+          <p class="note">Seed and size apply on reset and are the same for both players. Tick limit 0 = no limit; use it so a model that circles without eating doesn't keep spending forever.</p>
+        </div>
+      </div>
+      <button class="primary" id="resetBtn" data-icon="reset">Reset</button>
+    </div>
+    </div>
+  </header>
+
+  <main class="arena">
+    <section class="card board-col player-part" id="colA" data-p="A" aria-label="Board A"></section>
+
+    <section class="card duel" id="duel" aria-label="1 vs 1 duel">
+      <div class="duel-head">
+        <p class="label" data-icon="swords">1 vs 1 duel</p>
+        <span class="caption" id="duelStatus">Set up the API for A and B and press Start duel</span>
+      </div>
+      <div class="duel-btns">
+        <button type="button" class="primary" id="duelPlay" data-icon="play">Start duel</button>
+        <button type="button" id="duelStep" data-icon="step">One turn each</button>
+        <button type="button" id="duelStop" disabled data-icon="stop">Stop</button>
+        <button type="button" id="duelExport" data-icon="download">Download result</button>
+      </div>
+      <div class="vs">
+        <div class="vs-side a"><span class="p-badge a">A</span><span class="vs-num" id="vsScoreA">0</span><span class="caption vs-state" id="vsStateA">–</span></div>
+        <div class="verdict-row"><span class="verdict" id="verdict">Not started</span><span class="verdict-why" id="verdictWhy"></span></div>
+        <div class="vs-side b"><span class="p-badge b">B</span><span class="vs-num" id="vsScoreB">0</span><span class="caption vs-state" id="vsStateB">–</span></div>
+      </div>
+      <div class="cmp-wrap">
+        <table class="cmp" id="cmp">
+          <thead><tr><th scope="col">Metric</th><th scope="col" class="a">A</th><th scope="col" class="b">B</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="duel-opts">
+        <label class="check" for="syncTurns" title="Each round waits for both models to answer before continuing"><input id="syncTurns" type="checkbox"> Synchronized turns</label>
+        <label class="check" for="showDetails"><input id="showDetails" type="checkbox"> Show request, world and state</label>
+      </div>
+    </section>
+
+    <section class="card board-col player-part" id="colB" data-p="B" aria-label="Board B"></section>
+  </main>
+
+  <div class="details">
+    <div class="detail player-part" id="detailA" data-p="A"></div>
+    <div class="detail player-part" id="detailB" data-p="B"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const DIRS = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+  const OPP = { up:"down", down:"up", left:"right", right:"left" };
+  const MAX_INVALID_STREAK = 5;
+  const TIMEOUT_MS = 60000;
+  let hints = false;
+  let onPlayerChange = () => {};
+
+  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  const fmt = n => n==null ? "–" : n.toLocaleString("en-US");
+  const mode = () => $("mode").value;
+  const maxTicks = () => Math.max(0, Math.floor(+$("maxTicks").value || 0));
+  const mask = k => k ? (k.length > 10 ? k.slice(0,6) + "…" + k.slice(-4) : "***") : "(empty)";
+  const FORMAT_NAME = { chat:"OpenAI (chat completions)", decisions:"OpenRouter Decisions", custom:"System One" };
+
+  // ---------- prompts (shared by both players) ----------
+  const RULES = [
+    "You are playing Snake. Goal: eat as much food as possible without dying.",
+    "",
+    "RULES",
+    "- Square grid. (0,0) is the top-left corner. x increases to the right, y increases downward.",
+    "- Each move advances the snake exactly one cell.",
+    "- You die if your head leaves the board (wall) or hits your own body.",
+    "- The tail moves forward when you move, so the tail's cell is free that turn (unless you eat).",
+    "- Eating food (F) grows the snake by one cell; new food appears.",
+    "- Reversing 180° (opposite to current direction) is an invalid move.",
+    "",
+    "LEGEND: H = head, o = body, F = food, . = empty"
+  ].join("\n");
+
+  const QUESTIONS = {
+    move: {
+      type: "choice",
+      instructions: "Which move should the snake make next? Avoid walls, your own body and 180° reversals; among safe moves, prefer the one that gets closer to the food without trapping yourself.",
+      criteria: {
+        up: "Move one cell up (y-1)",
+        down: "Move one cell down (y+1)",
+        left: "Move one cell left (x-1)",
+        right: "Move one cell right (x+1)"
+      }
+    }
+  };
+
+  const CHAT_RULES = [
+    "You are an expert Snake player. Each turn you receive the current board and must choose the next move.",
+    "",
+    "COORDINATES",
+    "- (0,0) is the top-left corner. x is the column (grows to the right), y is the row (grows downward).",
+    "- The board is printed with column numbers on top and row numbers on the left.",
+    "- up = (x, y-1), down = (x, y+1), left = (x-1, y), right = (x+1, y).",
+    "",
+    "RULES",
+    "- Each move advances the head one cell; the rest of the body follows.",
+    "- You die if the head goes outside the board (x or y below 0 or above the last index) or onto your own body.",
+    "- The tail cell becomes free this turn, so moving onto the current tail is safe (unless you also eat).",
+    "- Eating the food (F) grows the snake by one cell and spawns new food elsewhere.",
+    "- Moving opposite to your current direction is not allowed.",
+    "",
+    "BOARD LEGEND",
+    "H = head, o = body, T = tail, F = food, . = empty",
+    "",
+    "HOW TO CHOOSE",
+    "1. Never pick a move into a wall, into your body or opposite to your current direction.",
+    "2. Among the remaining moves, prefer the one that reduces the distance to the food.",
+    "3. If two moves are equally good, pick the one that leaves more free space ahead, so you do not trap yourself.",
+    "4. If the move list below gives an outcome for each move, trust it: it is computed exactly from the board."
+  ].join("\n");
+  const CHAT_SYSTEM = CHAT_RULES + "\n\nOUTPUT\nReply with exactly one lowercase word: up, down, left or right. No punctuation, no explanation.";
+
+  // ---------- markup ----------
+  const X_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>';
+  const KEY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>';
+
+  // board column: header with the API key, the board, status and d-pad
+  function boardHTML(id){
+    const copyA = id === "A" ? "" : `<button type="button" class="f-copy" data-icon="copy">Copy from A</button>`;
+    return `
+  <div class="p-head">
+    <div class="p-id"><span class="p-badge">${id}</span><div class="p-meta"><span class="p-name">Player ${id}</span><span class="p-fmt caption"></span></div></div>
+    <div class="api-wrap">
+      <button type="button" class="gh-btn api-btn" aria-expanded="false" aria-controls="apiPanel-${id}">${KEY_SVG}<span>API key</span><i class="dot api-dot" hidden></i></button>
+      <form class="popover api-panel" id="apiPanel-${id}" hidden>
+        <div class="pop-head">
+          <p class="label" data-icon="key">API connection · ${id}</p>
+          <button type="button" class="icon-btn f-close" aria-label="Close" title="Close">${X_SVG}</button>
+        </div>
+        <label for="apiFormat-${id}">API format</label>
+        <select id="apiFormat-${id}" class="f-format">
+          <option value="chat">OpenAI (chat completions)</option>
+          <option value="decisions">OpenRouter Decisions</option>
+          <option value="custom">System One</option>
+        </select>
+        <label for="apiUrl-${id}">Endpoint</label>
+        <input id="apiUrl-${id}" class="f-url" type="url" placeholder="https://api.example.com/v1/chat/completions" autocomplete="off">
+        <label for="apiModel-${id}">Model ID</label>
+        <input id="apiModel-${id}" class="f-model" type="text" placeholder="model-id" autocomplete="off" spellcheck="false">
+        <label for="apiKey-${id}">API key</label>
+        <div class="row"><input id="apiKey-${id}" class="f-key" type="password" autocomplete="off" placeholder="sk-…"><button type="button" class="f-show">Show</button></div>
+        <p class="note">Stored only in this browser. The key goes in <code>Authorization: Bearer …</code> and the model in the <code>model</code> field. If the endpoint ends in <code>/v1</code>, it is completed according to the format: <code>/chat/completions</code> or, for Decisions, <code>/api/alpha/decisions</code>.</p>
+        <div class="row end ${copyA ? "split" : ""}">${copyA}<span class="row"><button type="button" class="f-clear" data-icon="trash">Clear</button><button type="submit" class="primary" data-icon="check">Save</button></span></div>
+      </form>
+    </div>
+  </div>
+  <canvas class="board" width="560" height="560" aria-label="Snake board ${id}"></canvas>
+  <div class="board-foot">
+    <div class="stack">
+      <span class="pill alive p-status">Playing</span>
+      <span class="caption auto-status">Set up the API to play</span>
+    </div>
+    <div class="dpad" title="Keyboard: ${id === "A" ? "W A S D" : "arrow keys"}. Turning 180° counts as invalid.">
+      <button data-dir="up" aria-label="Up"></button>
+      <button data-dir="left" aria-label="Left"></button>
+      <button data-dir="down" aria-label="Down"></button>
+      <button data-dir="right" aria-label="Right"></button>
+    </div>
+  </div>`;
+  }
+
+  // details below the arena: latency, log, and (optional) request / world / state
+  function detailHTML(id){
+    const api = id === "A" ? "snake" : "snakeB";
+    return `
+  <section class="card">
+    <div class="section-head"><p class="detail-title"><span class="p-badge">${id}</span><span class="label" data-icon="timer">Request latency</span></p><span class="caption"><span class="s-n">0</span> requests</span></div>
+    <div class="lat-row">
+      <span>Mean <b><span class="s-avg">–</span></b> ms</span>
+      <span>P50 <b><span class="s-p50">–</span></b> ms</span>
+      <span>P90 <b><span class="s-p90">–</span></b> ms</span>
+    </div>
+    <div class="spark">
+      <svg class="spark-svg" viewBox="0 0 300 46" preserveAspectRatio="none" aria-label="Latency of the last 40 requests"></svg>
+      <div class="empty spark-empty">No requests yet</div>
+    </div>
+    <p class="caption">Dashed line = P50 · <i style="background:var(--warn)"></i>invalid</p>
+  </section>
+  <section class="card">
+    <div class="section-head"><p class="label" data-icon="list">Log ${id}</p><code>${api}.history()</code></div>
+    <div class="codebox">
+      <div class="log"></div>
+      <button class="copy" data-copy="log" aria-label="Copy" title="Copy"></button>
+    </div>
+  </section>
+  <div class="extra">
+    <section class="card">
+      <div class="section-head"><p class="label" data-icon="send">Request ${id}</p><code>${api}.payload()</code></div>
+      <div class="codebox">
+        <pre class="wraptext payload-out"></pre>
+        <button class="copy" data-copy="payload" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="section-head"><p class="label" data-icon="grid">World ${id}</p><code>ascii</code></div>
+      <div class="codebox">
+        <pre class="ascii"></pre>
+        <button class="copy" data-copy="ascii" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="section-head"><p class="label" data-icon="braces">State ${id}</p><code>${api}.state()</code></div>
+      <div class="codebox">
+        <pre class="state-out"></pre>
+        <button class="copy" data-copy="state" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+  </div>`;
+  }
+
+  // ---------- one independent game + API client per player ----------
+  function createPlayer(id){
+    const colEl = $("col" + id), detEl = $("detail" + id), roots = [colEl, detEl];
+    colEl.innerHTML = boardHTML(id);
+    detEl.innerHTML = detailHTML(id);
+    const q = s => { for(const r of roots){ const n = r.querySelector(s); if(n) return n; } return null; };
+    const qa = s => roots.flatMap(r => [...r.querySelectorAll(s)]);
+    const setText = (s, v) => { const n = q(s); if(n) n.textContent = v; };
+    const tag = `[snake-arena ${id}]`;
+    let G, rng, timer = null, turnStartedAt = performance.now();
+    let running = false, abortCtl = null, errored = false, stopped = false;
+
+    // ----- game -----
+    function reset(opts = {}){
+      const size = +(opts.size ?? $("size").value);
+      const seed = +(opts.seed ?? $("seed").value);
+      if(typeof opts.hints === "boolean") setHints(opts.hints, false);
+      if(![...$("size").options].some(o => +o.value === size)) $("size").add(new Option(size, size));
+      $("size").value = size; $("seed").value = seed;
+      rng = mulberry32(seed);
+      const c = Math.floor(size/2);
+      G = { size, seed, tick:0, score:0, alive:true, dir:"right", invalid:0, invalidStreak:0, cost:null,
+            body:[{x:c,y:c},{x:c-1,y:c},{x:c-2,y:c}], food:null, history:[], deathReason:null,
+            startedAt:Date.now(), endedAt:null, stopReason:null };
+      placeFood();
+      turnStartedAt = performance.now();
+      q(".log").textContent = "";
+      logLine(`New game · seed ${seed} · ${size}×${size}`);
+      mode() === "realtime" ? startTimer() : stopTimer();
+      render();
+      return state();
+    }
+
+    function placeFood(){
+      const free = [];
+      for(let y=0;y<G.size;y++) for(let x=0;x<G.size;x++)
+        if(!G.body.some(b=>b.x===x&&b.y===y)) free.push({x,y});
+      G.food = free.length ? free[Math.floor(rng()*free.length)] : null;
+    }
+
+    function collides(x,y,ignoreTail){
+      if(x<0||y<0||x>=G.size||y>=G.size) return "wall";
+      const segs = ignoreTail ? G.body.slice(0,-1) : G.body;
+      return segs.some(b=>b.x===x&&b.y===y) ? "self" : null;
+    }
+
+    function die(reason){ G.alive = false; G.deathReason = reason; G.endedAt = Date.now(); stopTimer(); }
+
+    function step(){
+      const h = G.body[0], [dx,dy] = DIRS[G.dir], nx = h.x+dx, ny = h.y+dy;
+      const eats = G.food && G.food.x===nx && G.food.y===ny;
+      const hit = collides(nx,ny,!eats);
+      G.tick++;
+      if(hit){ die(hit); return "died"; }
+      G.body.unshift({x:nx,y:ny});
+      if(eats){ G.score++; placeFood(); return "ate"; }
+      G.body.pop();
+      return "moved";
+    }
+
+    function move(dir, source = "api", ms){
+      const latency = (typeof ms === "number" && isFinite(ms)) ? Math.round(ms) : Math.round(performance.now() - turnStartedAt);
+      dir = String(dir ?? "").toLowerCase().trim();
+      let event;
+      if(!G.alive) event = "game_over";
+      else if(!DIRS[dir] || dir === OPP[G.dir]){ event = "invalid"; G.invalid++; G.invalidStreak++; }
+      else if(mode() === "realtime"){ G.dir = dir; event = "turned"; G.invalidStreak = 0; }
+      else { G.dir = dir; event = step(); G.invalidStreak = 0; }
+      const forfeit = event === "invalid" && G.invalidStreak > MAX_INVALID_STREAK;
+      if(forfeit) die("invalid");
+      const entry = { n:G.history.length+1, tick:G.tick, dir:dir||"?", event, latencyMs:latency, source };
+      G.history.push(entry);
+      logEntry(entry);
+      if(forfeit) logLine(`Game lost: more than ${MAX_INVALID_STREAK} invalid moves in a row.`, "bad");
+      if(G.alive && limitHit() && !G.endedAt){ G.endedAt = Date.now(); logLine(`Limit of ${maxTicks()} ticks reached.`, "ok"); }
+      turnStartedAt = performance.now();
+      render();
+      return { ok: ["moved","ate","turned"].includes(event), event, latencyMs:latency, state:state() };
+    }
+
+    const limitHit = () => !!maxTicks() && G.tick >= maxTicks();
+    const finished = () => !G.alive || limitHit();
+
+    // Accepts raw API output: "up", "Move: LEFT", {"move":"down"}, {"answers":{"move":{"choice":"left"}}}, ["up","right"]
+    function findMove(v, depth = 0){
+      if(v == null || depth > 6) return null;
+      if(typeof v === "string"){
+        try{ const p = JSON.parse(v); if(p && typeof p === "object") return findMove(p, depth+1); }catch{}
+        const m = v.toLowerCase().match(/\b(up|down|left|right)\b/);
+        return m ? m[1] : null;
+      }
+      if(typeof v !== "object") return null;
+      for(const k of ["move","choice","answer","answers","direction","action","value","selected"])
+        if(k in v){ const r = findMove(v[k], depth+1); if(r) return r; }
+      for(const val of Object.values(v)){ const r = findMove(val, depth+1); if(r) return r; }
+      return null;
+    }
+    function apply(raw, opts){
+      const ms = typeof opts === "number" ? opts : opts?.ms;
+      let v = raw;
+      if(typeof v === "string"){ try{ v = JSON.parse(v); }catch{} }
+      if(Array.isArray(v)) return v.map(d => apply(d, opts));
+      const dir = findMove(v);
+      return move(dir ?? (typeof raw === "string" ? raw : JSON.stringify(raw)), "apply", ms);
+    }
+
+    // ----- world description -----
+    function neighbours(){
+      const h = G.body[0], out = {};
+      for(const [d,[dx,dy]] of Object.entries(DIRS)){
+        const x = h.x+dx, y = h.y+dy;
+        const eats = G.food && G.food.x===x && G.food.y===y;
+        out[d] = d === OPP[G.dir] ? "reverse" : (collides(x,y,!eats) || (eats ? "food" : "empty"));
+      }
+      return out;
+    }
+
+    function ascii(){
+      const rows = [];
+      for(let y=0;y<G.size;y++){
+        let r = "";
+        for(let x=0;x<G.size;x++){
+          const i = G.body.findIndex(b=>b.x===x&&b.y===y);
+          r += i===0 ? "H" : i>0 ? "o" : (G.food && G.food.x===x && G.food.y===y) ? "F" : ".";
+        }
+        rows.push(r);
+      }
+      return rows.join("\n");
+    }
+
+    function state(){
+      const h = G.body[0], n = neighbours();
+      return {
+        alive:G.alive, deathReason:G.deathReason, tick:G.tick, score:G.score,
+        grid:{ width:G.size, height:G.size, origin:"top-left", xRight:true, yDown:true },
+        direction:G.dir, head:{...h}, body:G.body.map(b=>({...b})), length:G.body.length,
+        food:G.food && {...G.food},
+        foodDelta:G.food && { dx:G.food.x-h.x, dy:G.food.y-h.y },
+        surroundings:n,
+        safeMoves:Object.keys(n).filter(d=>n[d]==="empty"||n[d]==="food"),
+        ascii:ascii(), invalidMoves:G.invalid, seed:G.seed
+      };
+    }
+
+    function stateText(){
+      const s = state();
+      const lines = [
+        "STATE",
+        `Board ${s.grid.width}x${s.grid.height}:`,
+        s.ascii,
+        `Head: (${s.head.x},${s.head.y})`,
+        `Direction: ${s.direction}`,
+        `Body (head first): ${s.body.map(b=>`(${b.x},${b.y})`).join(" ")}`,
+        `Food: ${s.food ? `(${s.food.x},${s.food.y})` : "none"}`,
+        `Length: ${s.length} | Score: ${s.score} | Tick: ${s.tick}`
+      ];
+      if(hints){
+        lines.push(`Food offset from head: dx=${s.foodDelta?.dx}, dy=${s.foodDelta?.dy}`);
+        lines.push(`Surroundings: ${Object.entries(s.surroundings).map(([k,v])=>`${k}=${v}`).join(", ")}`);
+      }
+      return lines.join("\n");
+    }
+    function prompt(){ return RULES + "\n\n" + stateText(); }
+
+    // Board with coordinate labels, tail marked as T
+    function labeledBoard(){
+      const N = G.size, w = String(N-1).length + 1;
+      const cell = (x,y) => {
+        const i = G.body.findIndex(b=>b.x===x&&b.y===y);
+        if(i===0) return "H";
+        if(i>0) return i===G.body.length-1 ? "T" : "o";
+        return (G.food && G.food.x===x && G.food.y===y) ? "F" : ".";
+      };
+      const rows = [" ".repeat(w) + Array.from({length:N},(_,x)=>String(x).padStart(w)).join("")];
+      for(let y=0;y<N;y++) rows.push(String(y).padStart(w) + Array.from({length:N},(_,x)=>cell(x,y).padStart(w)).join(""));
+      return rows.join("\n");
+    }
+
+    // Exact outcome of each move: target cell, what is there, food distance, reachable free space
+    function moveOptions(){
+      const h = G.body[0], out = {};
+      for(const [d,[dx,dy]] of Object.entries(DIRS)){
+        const x = h.x+dx, y = h.y+dy;
+        const o = { cell:[x,y] };
+        if(d === OPP[G.dir]){ o.result = "not allowed (reverse)"; out[d] = o; continue; }
+        const eats = G.food && G.food.x===x && G.food.y===y;
+        const hit = collides(x,y,!eats);
+        if(hit){ o.result = hit === "wall" ? "death (wall)" : "death (hits body)"; out[d] = o; continue; }
+        o.result = eats ? "eats food" : "safe";
+        if(G.food) o.foodDistance = Math.abs(G.food.x-x) + Math.abs(G.food.y-y);
+        const body = [{x,y}, ...(eats ? G.body : G.body.slice(0,-1))];
+        const blocked = new Set(body.map(b=>b.x+","+b.y));
+        const seen = new Set([x+","+y]), qq = [[x,y]];
+        let free = 0;
+        while(qq.length){
+          const [cx,cy] = qq.shift();
+          for(const [ex,ey] of Object.values(DIRS)){
+            const nx = cx+ex, ny = cy+ey, k = nx+","+ny;
+            if(nx<0||ny<0||nx>=G.size||ny>=G.size||blocked.has(k)||seen.has(k)) continue;
+            seen.add(k); free++; qq.push([nx,ny]);
+          }
+        }
+        o.freeSpace = free;
+        out[d] = o;
+      }
+      return out;
+    }
+    function describeOption(d, o){
+      let t = `${d} -> (${o.cell[0]},${o.cell[1]}): ${o.result}`;
+      if(o.foodDistance != null) t += `, food distance ${o.foodDistance}`;
+      if(o.freeSpace != null) t += `, ${o.freeSpace} free cells reachable`;
+      return t;
+    }
+
+    function chatUserText(ask = true){
+      const s = state();
+      const tail = s.body[s.body.length-1];
+      const lines = [
+        `Turn ${s.tick + 1} · Score ${s.score} · Length ${s.length} · Current direction: ${s.direction}`,
+        "",
+        `Board ${s.grid.width}x${s.grid.height} (valid x and y: 0 to ${s.grid.width-1}):`,
+        labeledBoard(),
+        "",
+        `Head: (${s.head.x},${s.head.y})`,
+        `Tail: (${tail.x},${tail.y})`,
+        `Body (head first): ${s.body.map(b=>`(${b.x},${b.y})`).join(" ")}`,
+        `Food: ${s.food ? `(${s.food.x},${s.food.y})` : "none"}`
+      ];
+      if(hints){
+        const dist = s.food ? Math.abs(s.foodDelta.dx) + Math.abs(s.foodDelta.dy) : null;
+        lines.push(`Food offset from head: dx=${s.foodDelta?.dx}, dy=${s.foodDelta?.dy} (distance now: ${dist})`);
+        lines.push("", "Outcome of each move:");
+        for(const [d,o] of Object.entries(moveOptions())) lines.push("- " + describeOption(d,o));
+      }
+      if(ask) lines.push("", "Your move?");
+      return lines.join("\n");
+    }
+    // Same information as the chat-completions request: rules/strategy + the current turn
+    function decisionsState(){ return { rules: CHAT_RULES, current_turn: chatUserText(false) }; }
+    function buildPayload(){
+      const m = cfg.model;
+      if(cfg.format === "decisions"){
+        let questions = QUESTIONS;
+        if(hints){
+          const opts = moveOptions(), criteria = {};
+          for(const [d,o] of Object.entries(opts)) criteria[d] = describeOption(d,o);
+          questions = { move: { ...QUESTIONS.move, criteria } };
+        }
+        return { model: m || "", questions, state: decisionsState() };
+      }
+      if(cfg.format === "custom") return m ? { model: m, state: prompt(), questions: QUESTIONS } : { state: prompt(), questions: QUESTIONS };
+      return { model: m || "", temperature: 0, messages: [
+        { role: "system", content: CHAT_SYSTEM },
+        { role: "user", content: chatUserText() }
+      ] };
+    }
+    function payload(){ turnStartedAt = performance.now(); return buildPayload(); }
+
+    // ----- stats -----
+    function stats(){
+      const xs = G.history.filter(h=>h.event!=="game_over").map(h=>h.latencyMs);
+      const s = [...xs].sort((a,b)=>a-b);
+      const qt = p => { if(!s.length) return null; const i=(s.length-1)*p, lo=Math.floor(i), hi=Math.ceil(i); return Math.round(s[lo]+(s[hi]-s[lo])*(i-lo)); };
+      return {
+        score:G.score, alive:G.alive, deathReason:G.deathReason, tick:G.tick, length:G.body.length,
+        limitReached: G.alive && limitHit(), finished: finished(),
+        invalidMoves:G.invalid, requests:xs.length, costUsd:G.cost,
+        accuracyPct: xs.length ? Math.round((xs.length - G.invalid) / xs.length * 100) : null,
+        ticksPerFood: G.score ? +(G.tick / G.score).toFixed(1) : null,
+        foodDistance: G.food ? Math.abs(G.food.x - G.body[0].x) + Math.abs(G.food.y - G.body[0].y) : null,
+        latencyMs:{ last: xs.length ? xs[xs.length-1] : null,
+                    mean: xs.length ? Math.round(xs.reduce((a,b)=>a+b,0)/xs.length) : null,
+                    p50:qt(.5), p90:qt(.9), total: xs.reduce((a,b)=>a+b,0) }
+      };
+    }
+
+    // ----- realtime -----
+    function stopTimer(){ if(timer){ clearInterval(timer); timer = null; } }
+    function startTimer(ms = 220){
+      stopTimer();
+      timer = setInterval(()=>{ if(!G.alive) return; const e = step(); if(e!=="moved") logLine(`tick → ${e}`, e==="died"?"bad":"ok"); render(); }, ms);
+    }
+    function applyMode(m, ms){ (m==="realtime" && G.alive) ? startTimer(ms) : stopTimer(); }
+
+    // ----- render -----
+    const cv = q(".board"), ctx = cv.getContext("2d");
+    const css = n => getComputedStyle(colEl).getPropertyValue(n).trim();
+
+    function drawBoard(){
+      const N = G.size, c = cv.width/N, pad = Math.max(1, c*0.07);
+      ctx.fillStyle = css("--board"); ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.fillStyle = css("--cell");
+      for(let y=0;y<N;y++) for(let x=0;x<N;x++) ctx.fillRect(x*c+pad, y*c+pad, c-2*pad, c-2*pad);
+      if(G.food){
+        ctx.fillStyle = css("--food");
+        ctx.beginPath(); ctx.arc(G.food.x*c+c/2, G.food.y*c+c/2, c*0.32, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = G.alive ? 1 : .45;
+      for(let i=G.body.length-1;i>=0;i--){
+        const b = G.body[i];
+        ctx.fillStyle = G.alive ? (i===0 ? css("--head") : css("--snake")) : css("--bad");
+        ctx.fillRect(b.x*c+pad, b.y*c+pad, c-2*pad, c-2*pad);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawSpark(st){
+      const svg = q(".spark-svg"), W = 300, H = 46, SLOTS = 40;
+      const xs = G.history.filter(h=>h.event!=="game_over").slice(-SLOTS);
+      q(".spark-empty").hidden = xs.length > 0;
+      if(!xs.length){ svg.innerHTML = ""; return; }
+      const max = Math.max(...xs.map(h=>h.latencyMs), st.latencyMs.p50 || 0, 1) * 1.1;
+      const slot = W/SLOTS, bw = Math.max(1, slot-2);
+      let out = "";
+      xs.forEach((h,i)=>{
+        const bh = Math.max(2, h.latencyMs/max*H);
+        const x = W - (xs.length-i)*slot + 1;
+        const color = h.event==="invalid" ? "--warn" : i===xs.length-1 ? "--stat" : "--spark";
+        out += `<rect x="${x}" y="${H-bh}" width="${bw}" height="${bh}" style="fill:var(${color})"><title>#${h.n} · ${h.dir} · ${h.event} · ${h.latencyMs} ms</title></rect>`;
+      });
+      const y = H - st.latencyMs.p50/max*H;
+      out += `<line x1="0" x2="${W}" y1="${y}" y2="${y}" style="stroke:var(--fg);opacity:.6" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"></line>`;
+      svg.innerHTML = out;
+    }
+
+    function statusText(){
+      if(G.alive) return limitHit() ? `Limit of ${maxTicks()} ticks` : "Playing";
+      return `Over · ${G.deathReason==="wall" ? "hit the wall" : G.deathReason==="invalid" ? "too many invalid moves" : "bit itself"}`;
+    }
+
+    function render(){
+      drawBoard();
+      const st = stats();
+      if(document.body.classList.contains("details-on")){
+        const s = state();
+        setText(".ascii", s.ascii);
+        setText(".payload-out", JSON.stringify(buildPayload(), null, 2));
+        const { ascii:_, ...rest } = s;
+        setText(".state-out", JSON.stringify(rest, null, 2));
+      }
+      setText(".s-avg", fmt(st.latencyMs.mean));
+      setText(".s-p50", fmt(st.latencyMs.p50));
+      setText(".s-p90", fmt(st.latencyMs.p90));
+      setText(".s-n", fmt(st.requests));
+      const pill = q(".p-status");
+      pill.textContent = statusText();
+      pill.className = "pill p-status " + (!G.alive ? "dead" : limitHit() ? "limit" : "alive");
+      roots.forEach(r => r.classList.toggle("dead", !G.alive));
+      drawSpark(st);
+      onPlayerChange();
+    }
+
+    function logLine(t, cls = ""){
+      const d = document.createElement("div");
+      d.className = "log-note" + (cls ? " " + cls : "");
+      d.textContent = t;
+      q(".log").prepend(d);
+    }
+
+    const EVENT_LABEL = { moved:"moved", ate:"ate", died:"died", invalid:"invalid", game_over:"over", turned:"turned" };
+    const EVENT_TONE  = { ate:"ok", died:"bad", game_over:"bad", invalid:"warn" };
+    const LOG_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+    function logEntry(e){
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const n = document.createElement("span"); n.className = "log-n"; n.textContent = "#" + e.n;
+      const dir = document.createElement("span"); dir.className = "log-dir";
+      if(DIRS[e.dir]) dir.innerHTML = `<i class="rot-${e.dir}">${LOG_ARROW}</i>`;
+      dir.append(e.dir);
+      const chip = document.createElement("span");
+      chip.className = "chip " + (EVENT_TONE[e.event] || "");
+      chip.textContent = EVENT_LABEL[e.event] || e.event;
+      const ms = document.createElement("span"); ms.className = "log-ms"; ms.textContent = `${e.latencyMs.toLocaleString("en-US")} ms`;
+      row.append(n, dir, chip, ms);
+      q(".log").prepend(row);
+    }
+
+    // ----- copy buttons & d-pad -----
+    const COPY = {
+      payload: () => JSON.stringify(payload()),
+      state:   () => JSON.stringify(state()),
+      ascii:   () => ascii(),
+      log:     () => JSON.stringify(G.history, null, 2)
+    };
+    qa(".copy").forEach(btn => {
+      btn.innerHTML = COPY_ICONS;
+      btn.addEventListener("click", async () => {
+        const text = COPY[btn.dataset.copy]();
+        try{ await navigator.clipboard.writeText(text); flash(btn, "Copied"); }
+        catch{
+          const box = btn.parentElement.querySelector("pre, .log");
+          try{ getSelection().selectAllChildren(box); }catch{}
+          flash(btn, "Text selected: press Ctrl+C");
+        }
+      });
+    });
+    qa("[data-dir]").forEach(b => { b.innerHTML = DPAD_ARROW; b.addEventListener("click", () => move(b.dataset.dir, "button")); });
+
+    // ----- API config -----
+    const CFG_KEY = id === "A" ? "snake-arena-api" : `snake-arena-api-${id}`;
+    let cfg = { url:"", key:"", model:"", format:"chat" };
+    try{ Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }catch{}
+    { const f = formatForUrl(cfg.url, cfg.format); if(f !== cfg.format){ cfg.format = f; saveCfg(); } }
+    function saveCfg(){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch{} }
+    const ready = () => !!(cfg.url && cfg.key && (cfg.format === "custom" || cfg.model));
+    function endpoint(){
+      let u = cfg.url.replace(/\/+$/, "");
+      if(cfg.format === "decisions"){ if(!/\/decisions$/.test(u)) u = u.replace(/\/(v1|alpha)$/, "") + "/alpha/decisions"; }
+      else if(cfg.format === "chat" && /\/v1$/.test(u)) u += "/chat/completions";
+      return u;
+    }
+    const displayName = () => cfg.model || `Player ${id}`;
+    function setAuto(t, cls = ""){ const s = q(".auto-status"); s.textContent = t; s.className = "caption auto-status " + cls; }
+    function updateApiUi(){
+      q(".api-dot").hidden = !ready();
+      setText(".p-name", displayName());
+      let host = ""; try{ host = cfg.url ? new URL(cfg.url).host : ""; }catch{}
+      setText(".p-fmt", ready() ? `${FORMAT_NAME[cfg.format]}${host ? " · " + host : ""}` : "Not configured");
+      if(!running) setAuto(ready() ? "Ready to play" : "Set up the API to play");
+      onPlayerChange();
+    }
+
+    function dbg(...a){
+      const out = a.map(v => {
+        if(v instanceof Error) return `${v.name}: ${v.message}`;
+        if(v && typeof v === "object"){ try{ return JSON.stringify(v); }catch{ return String(v); } }
+        return v;
+      });
+      console.log(tag, ...out);
+    }
+
+    async function requestMove(){
+      const body = JSON.stringify(payload());
+      abortCtl = new AbortController();
+      const ctl = abortCtl, t0 = performance.now(), turn = G.tick + 1;
+      let timedOut = false;
+      dbg(`turn ${turn} → POST ${endpoint()}`, { format: cfg.format, model: cfg.model, key: mask(cfg.key), body: JSON.parse(body) });
+      const killer = setTimeout(() => { timedOut = true; ctl.abort(); }, TIMEOUT_MS);
+      const ticker = setInterval(() => setAuto(`Waiting for response · turn ${turn} · ${((performance.now()-t0)/1000).toFixed(1)} s`), 100);
+      try{
+        let res;
+        try{
+          res = await fetch(endpoint(), { method:"POST", body, signal:ctl.signal,
+            headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${cfg.key}` } });
+        }catch(e){
+          dbg(`turn ${turn} ✖ fetch failed after ${Math.round(performance.now()-t0)} ms`, e);
+          if(timedOut) throw new Error(`No response in ${TIMEOUT_MS/1000} s from ${endpoint()}. Check the endpoint and the model, or open the browser console (Network tab).`);
+          if(e.name === "AbortError") throw e;
+          throw new Error("blocked");
+        }
+        dbg(`turn ${turn} ← HTTP ${res.status} in ${Math.round(performance.now()-t0)} ms`);
+        const text = await res.text();
+        const ms = performance.now() - t0;
+        dbg(`turn ${turn} full body in ${Math.round(ms)} ms:`, text.trim());
+        if(!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
+        let data = text, parsed = null;
+        try{ parsed = JSON.parse(text); data = parsed; }catch{}
+        if(cfg.format === "decisions" && data && typeof data === "object"){
+          const ans = data.answers?.move;
+          if(!ans) throw new Error("Response without answers.move: " + text.slice(0,200));
+          dbg(`turn ${turn} decision:`, ans.choice, { confidence: ans.confidence, probabilities: ans.probabilities });
+        }
+        if(cfg.format === "chat" && data && typeof data === "object"){
+          const content = data.choices?.[0]?.message?.content;
+          if(typeof content !== "string" || !content.trim()) throw new Error("Response without text: " + text.slice(0,200));
+          data = content;
+          dbg(`turn ${turn} model content:`, JSON.stringify(content), "usage:", parsed?.usage ?? null);
+        }
+        // a stop or reset during the request makes this answer stale: drop it
+        if(ctl.signal.aborted) throw new DOMException("Aborted", "AbortError");
+        const cost = typeof parsed?.usage?.cost === "number" ? parsed.usage.cost : null;
+        if(cost != null) G.cost = (G.cost || 0) + cost;
+        const result = apply(data, { ms });
+        if(cost != null){ const h = G.history.at(-1); if(h) h.costUsd = cost; }
+        dbg(`turn ${turn} move applied: ${result.event}`, { dir: G.history.at(-1)?.dir, latencyMs: result.latencyMs, score: G.score, alive: G.alive });
+        return result;
+      }catch(e){
+        dbg(`turn ${turn} error:`, e.message || e);
+        if(timedOut && e.name === "AbortError") throw new Error(`No response in ${TIMEOUT_MS/1000} s.`);
+        throw e;
+      }finally{
+        clearTimeout(killer); clearInterval(ticker);
+      }
+    }
+
+    // ----- auto-play: begin → turnOnce × n → end; the duel drives both players through these steps -----
+    function checkReady(open = true){
+      if(ready()) return true;
+      const missing = [!cfg.url && "endpoint", !cfg.key && "API key", (cfg.format !== "custom" && !cfg.model) && "model ID"].filter(Boolean);
+      const msg = `Missing ${missing.join(", ")} in API key`;
+      setAuto(msg, "bad");
+      logLine(`${msg}. Fill it in and press Save.`, "bad");
+      if(open) setTimeout(openPanel, 0);   // after this click finishes, so the outside-click handler does not close it
+      return false;
+    }
+    function begin(){
+      if(running) return false;
+      if(mode() === "realtime"){
+        setModeAll("turn");
+        logLine("Auto-play uses turn-based mode: in real time the snake keeps moving while the model thinks, and it decides on a board that has already changed.");
+      }
+      running = true; errored = false; stopped = false; G.stopReason = null;
+      onPlayerChange();
+      return true;
+    }
+    async function turnOnce(){
+      try{ await requestMove(); return true; }
+      catch(e){
+        errored = true;
+        if(e.name === "AbortError"){ setAuto("Stopped"); G.stopReason = "stopped"; }
+        else if(e.message === "blocked"){
+          G.stopReason = "error";
+          setAuto("The request didn't go out", "bad");
+          logLine("The request didn't go out: browser block, CORS or network. Inside the artifact external APIs are blocked; open the HTML from your repo.", "bad");
+        } else { G.stopReason = "error"; setAuto("API error", "bad"); logLine(e.message, "bad"); }
+        onPlayerChange();
+        return false;
+      }
+    }
+    function end(done){
+      if(!errored){
+        if(!G.alive) setAuto(`Game over · ${G.score} points`);
+        else if(limitHit()) setAuto(`Limit of ${maxTicks()} ticks · ${G.score} points`);
+        else if(stopped) setAuto("Stopped");
+        else setAuto(`Paused after ${done} turn${done===1?"":"s"}`);
+      }
+      running = false; abortCtl = null; onPlayerChange();
+    }
+    async function loop(n){
+      let done = 0;
+      while(running && !finished() && done < n){
+        if(!await turnOnce()) break;
+        done++;
+      }
+      end(done);
+    }
+    function stop(){
+      if(!running) return;
+      dbg("Stop pressed");
+      running = false; stopped = true; G.stopReason = "stopped";
+      abortCtl?.abort(); setAuto("Stopped");
+    }
+
+    // ----- API popover -----
+    const panel = q(".api-panel"), wrap = q(".api-wrap"), apiBtn = q(".api-btn");
+    const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+    const URL_PLACEHOLDER = { chat:"https://api.example.com/v1/chat/completions", decisions:DECISIONS_URL, custom:"https://api.example.com/v1/decisions" };
+    function syncUrlPlaceholder(){ q(".f-url").placeholder = URL_PLACEHOLDER[q(".f-format").value] || ""; }
+    function fillForm(c){ q(".f-url").value = c.url || ""; q(".f-key").value = c.key || ""; q(".f-model").value = c.model || ""; q(".f-format").value = c.format || "chat"; syncUrlPlaceholder(); }
+    function openPanel(){
+      closeAllPopovers();
+      fillForm(cfg);
+      panel.hidden = false; apiBtn.setAttribute("aria-expanded","true"); q(".f-url").focus();
+    }
+    function closePanel(){ panel.hidden = true; apiBtn.setAttribute("aria-expanded","false"); }
+    apiBtn.addEventListener("click", () => panel.hidden ? openPanel() : closePanel());
+    q(".f-format").addEventListener("change", () => {
+      const f = q(".f-format").value, url = q(".f-url");
+      if(f === "decisions") url.value = DECISIONS_URL;
+      else if(url.value.trim() === DECISIONS_URL) url.value = "";
+      syncUrlPlaceholder();
+    });
+    q(".f-close").addEventListener("click", () => { closePanel(); apiBtn.focus(); });
+    q(".f-show").addEventListener("click", e => {
+      const k = q(".f-key"); k.type = k.type === "password" ? "text" : "password";
+      e.currentTarget.textContent = k.type === "password" ? "Show" : "Hide";
+    });
+    q(".f-copy")?.addEventListener("click", () => {
+      // same endpoint and key as A; the model is what you usually change
+      const a = players.A.config();
+      q(".f-url").value = a.url; q(".f-key").value = a.key; q(".f-format").value = a.format; syncUrlPlaceholder();
+      if(!q(".f-model").value) q(".f-model").value = a.model;
+      q(".f-model").focus(); q(".f-model").select();
+    });
+    panel.addEventListener("submit", e => {
+      e.preventDefault();
+      cfg = { url:q(".f-url").value.trim(), key:q(".f-key").value.trim(), model:q(".f-model").value.trim(), format:q(".f-format").value };
+      const fixed = formatForUrl(cfg.url, cfg.format);
+      if(fixed !== cfg.format){
+        logLine(`The endpoint doesn't match the chosen format: using ${FORMAT_NAME[fixed]}.`);
+        cfg.format = fixed; q(".f-format").value = fixed;
+      }
+      saveCfg(); updateApiUi(); render(); closePanel();
+    });
+    q(".f-clear").addEventListener("click", () => {
+      cfg = { url:"", key:"", model:"", format:"chat" };
+      try{ localStorage.removeItem(CFG_KEY); }catch{}
+      fillForm(cfg); updateApiUi(); render();
+    });
+    document.addEventListener("click", e => { if(!panel.hidden && !wrap.contains(e.target)) closePanel(); });
+    document.addEventListener("keydown", e => { if(e.key === "Escape" && !panel.hidden){ closePanel(); apiBtn.focus(); } });
+
+    const api = {
+      id,
+      up:()=>move("up"), down:()=>move("down"), left:()=>move("left"), right:()=>move("right"),
+      move, apply, state, stats, prompt, payload, reset,
+      setHints:v => setHints(v), setMode:(m, ms) => setModeAll(m, ms),
+      history:() => G.history.map(h=>({...h}))
+    };
+    return {
+      id, api, reset, move, stats, render, ready, finished, begin, turnOnce, end, loop, stop, checkReady,
+      openPanel, closePanel, applyMode, updateApiUi, displayName,
+      isRunning: () => running,
+      config: () => ({...cfg}),
+      game: () => G,
+      summary: () => ({ name: displayName(), model: cfg.model || null, format: cfg.format, endpoint: cfg.url ? endpoint() : null,
+                        stopReason: G.stopReason, startedAt: new Date(G.startedAt).toISOString(),
+                        endedAt: G.endedAt ? new Date(G.endedAt).toISOString() : null,
+                        stats: stats(), history: G.history.map(h=>({...h})) })
+    };
+  }
+
+  // ---------- shared helpers ----------
+  function formatForUrl(url, chosen){
+    // The endpoint decides the body shape: a /decisions URL needs {questions, state}, a /chat/completions URL needs {messages}
+    const u = (url || "").replace(/\/+$/, "");
+    if(/\/decisions$/.test(u) && chosen === "chat") return "decisions";
+    if(/\/chat\/completions$/.test(u) && chosen !== "chat") return "chat";
+    return chosen;
+  }
+  const fmtCost = c => c == null ? "–" : c < 0.001 ? c.toFixed(5) : c < 1 ? c.toFixed(4) : c.toFixed(2);
+  const COPY_ICONS = '<svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>'
+                   + '<svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+  const DPAD_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+  function flash(btn, msg){
+    btn.classList.add("done"); btn.title = msg; btn.setAttribute("aria-label", msg);
+    clearTimeout(btn._t);
+    btn._t = setTimeout(()=>{ btn.classList.remove("done"); btn.title = "Copy"; btn.setAttribute("aria-label","Copy"); }, 1400);
+  }
+
+  // ---------- players ----------
+  const players = {};
+  players.A = createPlayer("A");
+  players.B = createPlayer("B");
+  const all = () => [players.A, players.B];
+
+  function setHints(v, rerender = true){ hints = !!v; $("hints").checked = hints; if(rerender) all().forEach(p => p.game() && p.render()); return hints; }
+  function setModeAll(m, ms){ $("mode").value = m; all().forEach(p => p.game() && p.applyMode(m, ms)); return m; }
+  function closeAllPopovers(){ all().forEach(p => p.closePanel()); closeSet(); }
+
+  // ---------- duel ----------
+  let duelRunning = false, duelStartedAt = null, duelEndedAt = null, duelTicker = null;
+  function setDuelStatus(t, cls = ""){ const s = $("duelStatus"); s.textContent = t; s.className = "caption " + cls; }
+  function toggleDuelBtns(){
+    const busy = duelRunning || all().some(p => p.isRunning());
+    $("duelPlay").disabled = busy;
+    $("duelStep").disabled = busy;
+    $("duelStop").disabled = !busy;
+  }
+
+  async function duel(n = Infinity){
+    if(duelRunning || all().some(p => p.isRunning())) return;
+    const notReady = all().filter(p => !p.ready());
+    if(notReady.length){
+      setDuelStatus(`API not configured for ${notReady.map(p => p.id).join(" and ")}`, "bad");
+      notReady.forEach((p, i) => p.checkReady(i === 0));
+      return;
+    }
+    if(n === Infinity || all().every(p => p.finished())) resetAll();
+    const racers = all().filter(p => !p.finished() && p.begin());
+    if(!racers.length) return;
+    duelRunning = true; duelStartedAt ??= performance.now(); duelEndedAt = null;
+    const sync = n === 1 || $("syncTurns").checked;
+    clearInterval(duelTicker);
+    duelTicker = setInterval(() => setDuelStatus(`${sync ? "Synchronized rounds" : "Games in parallel"} · ${((performance.now()-duelStartedAt)/1000).toFixed(1)} s`), 200);
+    toggleDuelBtns();
+    try{
+      if(sync){
+        // every round sends both requests at once and waits for both answers before the next round
+        const done = new Map(racers.map(p => [p, 0]));
+        let live = racers.slice(), rounds = 0;
+        while(duelRunning && live.length && rounds < n){
+          const ok = await Promise.all(live.map(p => p.turnOnce()));
+          live = live.filter((p, i) => { if(ok[i]) done.set(p, done.get(p) + 1); return ok[i] && p.isRunning() && !p.finished(); });
+          rounds++;
+        }
+        racers.forEach(p => p.end(done.get(p)));
+      } else {
+        // two independent games that start in the same instant; each moves as fast as its model answers
+        await Promise.all(racers.map(p => p.loop(n)));
+      }
+    } finally {
+      clearInterval(duelTicker);
+      duelRunning = false;
+      if(all().every(p => p.finished())) duelEndedAt = performance.now();
+      const secs = (((duelEndedAt ?? performance.now()) - duelStartedAt)/1000).toFixed(1);
+      const errs = all().filter(p => p.game().stopReason === "error").map(p => p.id);
+      if(errs.length) setDuelStatus(`API error in ${errs.join(" and ")} · check its log`, "bad");
+      else if(all().every(p => p.finished())) setDuelStatus(`Duel finished in ${secs} s`);
+      else if(all().some(p => p.game().stopReason === "stopped")) setDuelStatus(`Stopped at ${secs} s`);
+      else setDuelStatus(`Paused · ${secs} s`);
+      toggleDuelBtns(); renderDuel();
+    }
+  }
+  function stopAll(){ duelRunning = false; all().forEach(p => p.stop()); clearInterval(duelTicker); toggleDuelBtns(); }
+  function resetAll(){
+    stopAll();
+    duelStartedAt = null; duelEndedAt = null;
+    all().forEach(p => p.reset());
+    setDuelStatus(all().every(p => p.ready()) ? "Ready · press Start duel" : "Set up the API for A and B and press Start duel");
+  }
+
+  // Who wins: more points; then whoever is still alive (hit the tick limit, or is still playing);
+  // then whoever survived more ticks; then the faster model (lower P50).
+  function verdict(){
+    const [a, b] = all().map(p => p.stats());
+    const done = a.finished && b.finished;
+    const started = a.requests + b.requests + a.tick + b.tick > 0;
+    const pick = (cmp, why) => cmp === 0 ? null : { winner: cmp > 0 ? "A" : "B", why };
+    const res =
+      pick(Math.sign(a.score - b.score), "more points") ||
+      pick(Math.sign((a.alive?1:0) - (b.alive?1:0)), done ? "finished alive" : "still alive") ||
+      pick(Math.sign(a.tick - b.tick), "survived more ticks") ||
+      (a.latencyMs.p50 != null && b.latencyMs.p50 != null ? pick(Math.sign(b.latencyMs.p50 - a.latencyMs.p50), "answers faster (P50)") : null);
+    return { finished: done, started, winner: res?.winner ?? null, reason: res?.why ?? (started ? "tie" : null) };
+  }
+
+  const METRICS = [
+    { label:"Score", get:s => s.score, better:"high" },
+    { label:"Status", get:s => s.alive ? (s.limitReached ? "Limit" : "Alive") : ({wall:"Wall", self:"Bit itself", invalid:"Invalid"}[s.deathReason] || "Dead"), text:true },
+    { label:"Ticks", get:s => s.tick, better:"high" },
+    { label:"Length", get:s => s.length, better:"high" },
+    { label:"Invalid", get:s => s.invalidMoves, better:"low" },
+    { label:"Accuracy", get:s => s.accuracyPct, better:"high", unit:"%" },
+    { label:"Ticks/food", get:s => s.ticksPerFood, better:"low" },
+    { label:"Mean latency", get:s => s.latencyMs.mean, better:"low", unit:" ms" },
+    { label:"P50", get:s => s.latencyMs.p50, better:"low", unit:" ms" },
+    { label:"P90", get:s => s.latencyMs.p90, better:"low", unit:" ms" },
+    { label:"Total time", get:s => s.requests ? s.latencyMs.total : null, better:"low", f:v => (v/1000).toLocaleString("en-US",{maximumFractionDigits:1}) + " s" },
+    { label:"Cost", get:s => s.costUsd, better:"low", f:v => "$" + fmtCost(v) }
+  ];
+  function renderDuel(){
+    const [A, B] = all(), sa = A.stats(), sb = B.stats();
+    $("vsScoreA").textContent = fmt(sa.score); $("vsScoreB").textContent = fmt(sb.score);
+    const st = (p, s) => p.isRunning() ? `Playing · tick ${fmt(s.tick)}` : s.alive ? (s.limitReached ? `Limit · tick ${fmt(s.tick)}` : `Tick ${fmt(s.tick)}`) : `Over · tick ${fmt(s.tick)}`;
+    $("vsStateA").textContent = st(A, sa); $("vsStateB").textContent = st(B, sb);
+    const v = verdict(), vEl = $("verdict");
+    if(!v.started){ vEl.textContent = "Not started"; vEl.className = "verdict"; $("verdictWhy").textContent = ""; }
+    else if(!v.winner){ vEl.textContent = v.finished ? "Tie" : "Tied so far"; vEl.className = "verdict"; $("verdictWhy").textContent = ""; }
+    else {
+      vEl.textContent = v.finished ? `${v.winner} wins` : `${v.winner} is leading`;
+      vEl.className = "verdict " + v.winner.toLowerCase();
+      $("verdictWhy").textContent = v.reason;
+    }
+    $("cmp").tBodies[0].innerHTML = METRICS.map(m => {
+      const va = m.get(sa), vb = m.get(sb);
+      const show = x => x == null ? "–" : m.text ? x : m.f ? m.f(x) : fmt(x) + (m.unit || "");
+      let wa = "", wb = "";
+      if(m.better && va != null && vb != null && va !== vb){
+        const aWins = m.better === "high" ? va > vb : va < vb;
+        if(aWins) wa = "win a"; else wb = "win b";
+      }
+      const tip = m.better === "high" ? "higher is better" : m.better === "low" ? "lower is better" : "";
+      return `<tr title="${tip}"><th scope="row">${m.label}</th><td class="${wa}">${show(va)}</td><td class="${wb}">${show(vb)}</td></tr>`;
+    }).join("");
+  }
+  let duelRaf = 0;
+  onPlayerChange = () => {
+    if(duelRaf) return;
+    duelRaf = requestAnimationFrame(() => { duelRaf = 0; renderDuel(); toggleDuelBtns(); });
+  };
+
+  function result(){
+    return {
+      date: new Date().toISOString(),
+      settings: { seed: +$("seed").value, size: +$("size").value, hints, maxTicks: maxTicks(), syncTurns: $("syncTurns").checked },
+      verdict: verdict(),
+      durationMs: duelStartedAt == null ? null : Math.round((duelEndedAt ?? performance.now()) - duelStartedAt),
+      players: { A: players.A.summary(), B: players.B.summary() }
+    };
+  }
+  function downloadResult(){
+    const r = result();
+    const slug = s => (s || "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "no-model";
+    const name = `snake-duel_${slug(r.players.A.model)}_vs_${slug(r.players.B.model)}_seed${r.settings.seed}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type:"application/json" }));
+    const a = Object.assign(document.createElement("a"), { href:url, download:name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  $("duelPlay").addEventListener("click", () => duel(Infinity));
+  $("duelStep").addEventListener("click", () => duel(1));
+  $("duelStop").addEventListener("click", stopAll);
+  $("duelExport").addEventListener("click", downloadResult);
+  $("showDetails").addEventListener("change", e => { document.body.classList.toggle("details-on", e.target.checked); all().forEach(p => p.render()); });
+
+  // ---------- settings popover & global controls ----------
+  const setPanel = $("setPanel");
+  function openSet(){ all().forEach(p => p.closePanel()); setPanel.hidden = false; $("setBtn").setAttribute("aria-expanded","true"); $("seed").focus(); }
+  function closeSet(){ setPanel.hidden = true; $("setBtn").setAttribute("aria-expanded","false"); }
+  $("setBtn").addEventListener("click", () => setPanel.hidden ? openSet() : closeSet());
+  $("setClose").addEventListener("click", () => { closeSet(); $("setBtn").focus(); });
+  document.addEventListener("click", e => { if(!setPanel.hidden && !$("setWrap").contains(e.target)) closeSet(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape" && !setPanel.hidden){ closeSet(); $("setBtn").focus(); } });
+  $("resetBtn").addEventListener("click", resetAll);
+  $("mode").addEventListener("change", e => setModeAll(e.target.value));
+  $("hints").addEventListener("change", e => setHints(e.target.checked));
+  $("maxTicks").addEventListener("change", () => all().forEach(p => p.render()));
+
+  // keyboard: W A S D moves A, arrows move B
+  const ARROWS = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right" };
+  const WASD = { w:"up", s:"down", a:"left", d:"right" };
+  document.addEventListener("keydown", e => {
+    if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    const w = WASD[e.key.toLowerCase()], k = ARROWS[e.key];
+    if(w){ e.preventDefault(); players.A.move(w, "keyboard"); }
+    else if(k){ e.preventDefault(); players.B.move(k, "keyboard"); }
+  });
+  const rerender = () => all().forEach(p => p.game() && p.render());
+  try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender); }catch{}
+  new MutationObserver(rerender).observe(document.documentElement, { attributes:true, attributeFilter:["data-theme"] });
+
+  // ---------- icons ----------
+  const IC = {
+    reset:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    play:'<path d="M7 4v16l13-8z"/>',
+    step:'<path d="M5 4v16l10-8z"/><path d="M19 5v14"/>',
+    stop:'<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+    check:'<path d="M20 6 9 17l-5-5"/>',
+    copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+    trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+    timer:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/>',
+    send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    grid:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+    braces:'<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    sliders:'<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+    key:'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+    swords:'<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/>',
+    download:'<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>'
+  };
+  document.querySelectorAll("[data-icon]").forEach(el => {
+    const d = IC[el.dataset.icon]; if(!d) return;
+    el.insertAdjacentHTML("afterbegin", `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`);
+  });
+
+  // ---------- boot ----------
+  all().forEach(p => p.updateApiUi());
+  resetAll();
+
+  window.snake = players.A.api;
+  window.snakeB = players.B.api;
+  window.arena = {
+    A: players.A.api, B: players.B.api,
+    duel: () => duel(Infinity), step: () => duel(1), stop: stopAll, reset: resetAll, result
+  };
+})();
+</script>
+</body>
+</html>

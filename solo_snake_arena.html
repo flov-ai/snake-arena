@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Snake Arena</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Familjen+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: scoreboard band on top (score is the hero, latency next to it), then board | request side by side, then world · state · log panes. Everything stacks on phones. */
+:root{
+  --bg:#f3f3f2; --panel:#ffffff; --sunk:#f5f5f5; --fg:#111111; --muted:#6b6b6b; --line:#e4e4e4;
+  --board:#f5f5f5; --cell:#ebebeb; --snake:#22a356; --head:#0f6b35; --food:#e5402a;
+  --accent:#111111; --on-accent:#ffffff; --spark:#d6d6d6; --stat:#159149; --ok:#159149; --bad:#d33a24; --warn:#e07b12;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"Familjen Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e0e0e; --panel:#151515; --sunk:#1c1c1c; --fg:#f2f2f2; --muted:#9a9a9a; --line:#2a2a2a;
+  --board:#121212; --cell:#1e1e1e; --snake:#3fcf7a; --head:#a3f0c2; --food:#ff5a43;
+  --accent:#f2f2f2; --on-accent:#111111; --spark:#3a3a3a; --stat:#4ed283; --ok:#4ed283; --bad:#ff6a52; --warn:#ffa043; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e0e0e; --panel:#151515; --sunk:#1c1c1c; --fg:#f2f2f2; --muted:#9a9a9a; --line:#2a2a2a;
+  --board:#121212; --cell:#1e1e1e; --snake:#3fcf7a; --head:#a3f0c2; --food:#ff5a43;
+  --accent:#f2f2f2; --on-accent:#111111; --spark:#3a3a3a; --stat:#4ed283; --ok:#4ed283; --bad:#ff6a52; --warn:#ffa043; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body.game-over{--stat:var(--bad)}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;margin:0;padding-block:24px 48px;padding-inline:16px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+
+/* header */
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:16px 24px;align-items:start}
+.h1-ic{width:26px;height:26px;flex:none}
+h1{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:700;margin:0;letter-spacing:-.015em;text-wrap:balance}
+.sub{margin:4px 0 0;color:var(--muted);max-width:60ch;line-height:1.45}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:flex-end}
+.top-right{display:flex;flex-direction:column;align-items:flex-end;gap:12px;min-width:0}
+.gh{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.gh-btn{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);text-decoration:none;font-size:13px;font-weight:500}
+.gh-btn:hover{border-color:var(--accent)}
+.gh-btn svg{width:16px;height:16px;flex:none}
+button.gh-btn{cursor:pointer}
+[data-icon]{display:inline-flex;align-items:center;gap:7px}
+button[data-icon]{justify-content:center}
+.ic{width:15px;height:15px;flex:none}
+.label .ic{width:14px;height:14px;color:var(--fg);opacity:.7}
+.api-wrap{position:relative}
+.popover select{width:100%}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.fieldset{display:grid;gap:8px;min-width:0}
+.popover .check{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:13px;margin-top:4px}
+.popover input[type=checkbox]{width:16px;flex:none}
+.gh{display:grid;grid-template-columns:repeat(2,auto);gap:8px;justify-content:end;align-items:stretch}
+.gh > *,.api-wrap > .gh-btn{width:100%}
+.gh .gh-btn,.gh #resetBtn{justify-content:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.popover{position:absolute;right:0;top:calc(100% + 8px);z-index:10;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:16px;display:grid;gap:8px;text-align:left}
+.pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.icon-btn{width:28px;height:28px;padding:0;display:grid;place-items:center;border-color:transparent;background:transparent;color:var(--muted)}
+.icon-btn:hover{color:var(--fg);border-color:var(--line)}
+.icon-btn svg{width:16px;height:16px}
+.popover label{font-size:12px;color:var(--muted);font-weight:500}
+.popover input{width:100%}
+.popover .row{display:flex;gap:8px}
+.popover .row input{flex:1;min-width:0}
+.popover .end{justify-content:flex-end;margin-top:4px}
+.note{font-size:12px;color:var(--muted);margin:0;line-height:1.45}
+.note code{font-family:var(--mono);font-size:11px}
+.row-btns{display:flex;gap:8px;flex-wrap:wrap}
+.caption.bad{color:var(--bad)}
+button:disabled{opacity:.45;cursor:default}
+button:disabled:hover{border-color:var(--line)}
+@media (max-width:600px){.gh-btn span{display:none}.sub{font-size:13px}}
+.field{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+
+/* controls */
+button,select,input{font:inherit;font-size:13px;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 10px}
+input[type=number],#cmd,#cmdMs{font-family:var(--mono);font-size:12.5px}
+input[type=number]{width:84px}
+input[type=checkbox]{padding:0;width:16px;height:16px;accent-color:var(--accent)}
+button{cursor:pointer;font-weight:500}
+button:hover{border-color:var(--accent)}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.primary:hover{filter:brightness(1.08)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0}
+
+/* scoreboard */
+.scoreboard{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1.25fr);gap:20px 32px;padding:20px 24px}
+.hero{display:grid;gap:12px;align-content:start;padding-right:32px;border-right:1px solid var(--line)}
+.hero-row{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.hero-num{font-size:clamp(64px,10vw,104px);font-weight:700;line-height:.85;letter-spacing:-.04em;color:var(--stat)}
+.group{display:grid;gap:12px;align-content:start;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tiles.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tile{display:grid;gap:3px;align-content:start;padding:10px 12px;background:var(--sunk);border-radius:6px}
+.tile .v{font-size:26px;font-weight:600;line-height:1.1;white-space:nowrap;color:var(--stat)}
+.tile .u{font-size:13px;color:var(--muted);font-weight:500;margin-left:3px}
+.tile.key{box-shadow:inset 0 0 0 1.5px var(--stat)}
+.spark{position:relative;height:46px}
+.spark svg{width:100%;height:100%;display:block;overflow:visible}
+.spark .empty{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px}
+.caption{font-size:12px;color:var(--muted);margin:0}
+.caption i{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;margin-bottom:6px}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.alive{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.dead{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+@media (max-width:920px){
+  .scoreboard{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .hero{grid-column:1/-1;border-right:0;border-bottom:1px solid var(--line);padding:0 0 16px}
+}
+@media (max-width:600px){.scoreboard{grid-template-columns:minmax(0,1fr);padding:16px}}
+
+/* main area */
+.main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px;align-items:stretch}
+.req-card{display:flex;flex-direction:column;gap:12px}
+.req-card .grow{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:12px}
+.req-card .grow .codebox{flex:1 1 0;min-height:240px}
+.req-card .grow pre{position:absolute;inset:0;max-height:none}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}.req-card .grow .codebox{min-height:360px}}
+.stack{display:grid;gap:12px;align-content:start}
+canvas{width:100%;max-width:100%;aspect-ratio:1;display:block;border-radius:6px;background:var(--board)}
+.pad-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.dpad{display:grid;grid-template-columns:repeat(3,46px);grid-template-rows:repeat(2,40px);gap:6px}
+.dpad button{padding:0;display:grid;place-items:center}
+.dpad svg{width:18px;height:18px}
+.dpad [data-dir="right"] svg{transform:rotate(90deg)}
+.dpad [data-dir="down"] svg{transform:rotate(180deg)}
+.dpad [data-dir="left"] svg{transform:rotate(270deg)}
+.dpad [data-dir="up"]{grid-column:2;grid-row:1}
+.dpad [data-dir="left"]{grid-column:1;grid-row:2}
+.dpad [data-dir="down"]{grid-column:2;grid-row:2}
+.dpad [data-dir="right"]{grid-column:3;grid-row:2}
+.hint{color:var(--muted);font-size:12px;margin:0;max-width:28ch;line-height:1.4}
+.cmd-form{display:flex;gap:8px;flex-wrap:wrap}
+#cmd{flex:1 1 220px;min-width:0}
+#cmdMs{width:110px}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.section-head code{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+/* code boxes with copy button */
+.codebox{position:relative;min-width:0}
+.codebox pre,.codebox .log{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:12px 46px 12px 12px;overflow:auto;max-height:300px;font:12px/1.5 var(--mono);white-space:pre;min-height:44px}
+.codebox .wraptext{white-space:pre-wrap;overflow-wrap:anywhere;max-height:470px}
+#ascii{letter-spacing:.3em;line-height:1.25;font-size:13px;max-height:none;height:100%}
+#asciiCard{display:flex;flex-direction:column}
+#asciiCard .codebox{flex:1}
+.copy{position:absolute;top:6px;right:6px;width:30px;height:30px;display:grid;place-items:center;padding:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+.copy:hover{color:var(--fg)}
+.copy svg{width:15px;height:15px}
+.copy .i-check{display:none}
+.copy.done{color:var(--ok);border-color:var(--ok)}
+.copy.done .i-copy{display:none}
+.copy.done .i-check{display:block}
+.codebox .log{white-space:normal;font-family:var(--sans);padding:6px 46px 6px 6px;display:flex;flex-direction:column;gap:2px;height:300px;max-height:300px}
+.log-row{display:grid;grid-template-columns:40px minmax(64px,auto) minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 8px;border-radius:5px;font-size:12.5px}
+.log-row:first-child{background:var(--panel)}
+.log-n{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.log-dir{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.log-dir i{display:grid;place-items:center;width:20px;height:20px;border-radius:4px;background:var(--panel);border:1px solid var(--line)}
+.log-dir svg{width:12px;height:12px}
+.rot-right svg{transform:rotate(90deg)} .rot-down svg{transform:rotate(180deg)} .rot-left svg{transform:rotate(270deg)}
+.chip{justify-self:start;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted)}
+.chip.ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.chip.bad{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.chip.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.log-ms{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.log-note{padding:6px 10px;margin:2px 0;font-size:12px;line-height:1.45;color:var(--muted);border-left:2px solid var(--line)}
+.log-note.bad{color:var(--bad);border-left-color:var(--bad)}
+.log-note.ok{color:var(--ok);border-left-color:var(--ok)}
+.ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+
+.panes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.panes .card{display:grid;gap:10px;align-content:start}
+
+.api{display:grid;gap:8px;line-height:1.6;color:var(--muted)}
+.api code{font-family:var(--mono);font-size:12px;color:var(--fg);background:var(--sunk);border-radius:4px;padding:1px 5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><svg class="h1-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Snake Arena</h1>
+      <p class="sub">Turn-based board for an LLM to play: each response advances one tick. With the same seed, food appears in the same order for every model.</p>
+    </div>
+    <div class="top-right">
+    <div class="gh">
+      <a class="gh-btn" href="https://github.com/flov-ai/snake-arena" target="_blank" rel="noopener" aria-label="GitHub repository">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        <span>flov-ai/snake-arena</span>
+      </a>
+      <div class="api-wrap" id="apiWrap">
+        <button type="button" class="gh-btn" id="apiBtn" aria-expanded="false" aria-controls="apiPanel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>
+          <span>API key</span><i class="dot" id="apiDot" hidden></i>
+        </button>
+        <form class="popover" id="apiPanel" hidden>
+          <div class="pop-head">
+            <p class="label" data-icon="key">API connection</p>
+            <button type="button" class="icon-btn" id="apiClose" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+          </div>
+          <label for="apiFormat">API format</label>
+          <select id="apiFormat">
+            <option value="chat">OpenAI (chat completions)</option>
+            <option value="decisions">OpenRouter Decisions</option>
+            <option value="custom">System One</option>
+          </select>
+          <label for="apiUrl">Endpoint</label>
+          <input id="apiUrl" type="url" placeholder="https://api.example.com/v1/chat/completions" autocomplete="off">
+          <label for="apiModel">Model ID</label>
+          <input id="apiModel" type="text" placeholder="model-id" autocomplete="off" spellcheck="false">
+          <label for="apiKey">API key</label>
+          <div class="row"><input id="apiKey" type="password" autocomplete="off" placeholder="sk-…"><button type="button" id="apiShow">Show</button></div>
+          <p class="note">Stored only in this browser. The key goes in <code>Authorization: Bearer …</code> and the model in the <code>model</code> field. If the endpoint ends in <code>/v1</code>, it is completed according to the format: <code>/chat/completions</code> or, for Decisions, <code>/api/alpha/decisions</code>.</p>
+          <div class="row end"><button type="button" id="apiClear" data-icon="trash">Clear</button><button type="submit" class="primary" data-icon="check">Save</button></div>
+        </form>
+      </div>
+      <div class="api-wrap" id="setWrap">
+        <button type="button" class="gh-btn" id="setBtn" aria-expanded="false" aria-controls="setPanel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"></path></svg>
+          <span>Settings</span>
+        </button>
+        <div class="popover" id="setPanel" hidden>
+          <div class="pop-head">
+            <p class="label" data-icon="sliders">Game settings</p>
+            <button type="button" class="icon-btn" id="setClose" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+          </div>
+          <div class="two-col">
+            <div class="fieldset"><label for="seed">Seed</label><input id="seed" type="number" value="42"></div>
+            <div class="fieldset"><label for="size">Board size</label><select id="size"><option>8</option><option>10</option><option selected>12</option><option>16</option><option>20</option></select></div>
+          </div>
+          <label for="mode">Mode</label>
+          <select id="mode"><option value="turn" selected>Turn-based</option><option value="realtime">Real time</option></select>
+          <label class="check" for="hints"><input id="hints" type="checkbox"> Hints in the state (dx/dy and neighbouring cells)</label>
+          <p class="note">Seed and size apply on reset.</p>
+        </div>
+      </div>
+      <button class="primary" id="resetBtn" data-icon="reset">Reset</button>
+    </div>
+    </div>
+  </header>
+
+  <section class="card scoreboard" aria-label="Scoreboard">
+    <div class="hero">
+      <p class="label" data-icon="trophy">Score</p>
+      <div class="hero-row">
+        <span id="sScore" class="hero-num">0</span>
+        <span id="status" class="pill alive">Playing</span>
+      </div>
+    </div>
+    <div class="group">
+      <p class="label" data-icon="gamepad">Game</p>
+      <div class="tiles">
+        <div class="tile"><span class="label">Tick</span><span class="v" id="sTick">0</span></div>
+        <div class="tile"><span class="label">Length</span><span class="v" id="sLen">3</span></div>
+        <div class="tile"><span class="label">Invalid</span><span class="v" id="sInvalid">0</span></div>
+        <div class="tile"><span class="label">Accuracy</span><span class="v"><span id="sAcc">–</span><span class="u">%</span></span></div>
+        <div class="tile"><span class="label">Ticks/food</span><span class="v" id="sTpf">–</span></div>
+        <div class="tile"><span class="label">Total cost</span><span class="v"><span id="sCost">–</span><span class="u">$</span></span></div>
+      </div>
+    </div>
+    <div class="group">
+      <p class="label" data-icon="timer">Request latency</p>
+      <div class="tiles two">
+        <div class="tile"><span class="label">Mean</span><span class="v"><span id="sAvg">–</span><span class="u">ms</span></span></div>
+        <div class="tile key"><span class="label">P50</span><span class="v"><span id="sP50">–</span><span class="u">ms</span></span></div>
+      </div>
+      <div class="spark">
+        <svg id="spark" viewBox="0 0 300 46" preserveAspectRatio="none" aria-label="Latency of the last 40 requests"></svg>
+        <div class="empty" id="sparkEmpty">No requests yet</div>
+      </div>
+      <p class="caption"><span id="sN">0</span> requests · dashed line = P50 · <i style="background:var(--warn)"></i>invalid</p>
+    </div>
+  </section>
+
+  <div class="main">
+    <section class="card stack" aria-label="Board">
+      <canvas id="board" width="560" height="560" aria-label="Snake board"></canvas>
+      <div class="pad-row">
+        <div class="dpad">
+          <button data-dir="up" aria-label="Up"></button>
+          <button data-dir="left" aria-label="Left"></button>
+          <button data-dir="down" aria-label="Down"></button>
+          <button data-dir="right" aria-label="Right"></button>
+        </div>
+        <p class="hint">Arrow keys work too. Turning 180° counts as invalid and does not advance.</p>
+      </div>
+    </section>
+
+    <section class="card req-card" aria-label="Request and response">
+      <div class="stack">
+        <div class="section-head"><p class="label" data-icon="bot">Auto-play</p><span class="caption" id="autoStatus">Set up the API to play</span></div>
+        <div class="row-btns">
+          <button type="button" class="primary" id="playBtn" data-icon="play">Play</button>
+          <button type="button" id="stepBtn" data-icon="step">One turn</button>
+          <button type="button" id="stopBtn" disabled data-icon="stop">Stop</button>        </div>
+      </div>
+      <div class="stack">
+        <p class="label" data-icon="message">Model response</p>
+        <form id="cmdForm" class="cmd-form">
+          <input id="cmd" autocomplete="off" placeholder='left · {"move":"left"} · {"answers":{"move":"left"}}' aria-label="Model response">
+          <input id="cmdMs" type="number" min="0" placeholder="ms (opt.)" aria-label="Measured latency in ms (optional)">
+          <button type="submit" class="primary" data-icon="apply">Apply</button>
+        </form>
+      </div>
+      <div class="grow">
+        <div class="section-head"><p class="label" data-icon="send">Request</p><code>snake.payload()</code></div>
+        <div class="codebox">
+          <pre id="payloadOut" class="wraptext"></pre>
+          <button class="copy" data-copy="payload" aria-label="Copy" title="Copy"></button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="panes">
+    <section class="card" id="asciiCard">
+      <div class="section-head"><p class="label" data-icon="grid">World</p><code>ascii</code></div>
+      <div class="codebox">
+        <pre id="ascii"></pre>
+        <button class="copy" data-copy="ascii" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="section-head"><p class="label" data-icon="braces">State</p><code>snake.state()</code></div>
+      <div class="codebox">
+        <pre id="stateOut"></pre>
+        <button class="copy" data-copy="state" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="section-head"><p class="label" data-icon="list">Log</p><code>snake.history()</code></div>
+      <div class="codebox">
+        <div id="log" class="log"></div>
+        <button class="copy" data-copy="log" aria-label="Copy" title="Copy"></button>
+      </div>
+    </section>
+  </div>
+
+  <section class="card api" aria-label="API">
+    <p class="label" data-icon="code">API on window.snake</p>
+    <div><code>snake.payload()</code> returns the request body for the format chosen under API key (chat completions or <code>{state, questions}</code>) and starts the turn timer.</div>
+    <div><code>snake.apply(respuesta, {ms})</code> accepts the raw API response (<code>"left"</code>, <code>{"move":"left"}</code>, <code>{"answers":{"move":"left"}}</code>…) and executes it. If you pass <code>ms</code>, that latency is used; otherwise it measures from the last <code>payload()</code> or move.</div>
+    <div><code>up()</code> <code>down()</code> <code>left()</code> <code>right()</code> · <code>snake.state()</code> · <code>snake.stats()</code> (score, invalid moves, mean, P50, P90) · <code>snake.history()</code> · <code>snake.reset({seed, size, hints})</code> · <code>snake.setHints(true)</code></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const DIRS = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+  const OPP = { up:"down", down:"up", left:"right", right:"left" };
+  let G, rng, timer = null, hints = false, turnStartedAt = performance.now();
+
+  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+  // ---------- game ----------
+  function reset(opts = {}){
+    const size = +(opts.size ?? $("size").value);
+    const seed = +(opts.seed ?? $("seed").value);
+    if(typeof opts.hints === "boolean") hints = opts.hints;
+    if(![...$("size").options].some(o => +o.value === size)) $("size").add(new Option(size, size));
+    $("size").value = size; $("seed").value = seed; $("hints").checked = hints;
+    rng = mulberry32(seed);
+    const c = Math.floor(size/2);
+    G = { size, seed, tick:0, score:0, alive:true, dir:"right", invalid:0, cost:null,
+          body:[{x:c,y:c},{x:c-1,y:c},{x:c-2,y:c}], food:null, history:[], deathReason:null };
+    placeFood();
+    turnStartedAt = performance.now();
+    $("log").textContent = "";
+    logLine(`New game · seed ${seed} · ${size}×${size}`);
+    mode() === "realtime" ? startTimer() : stopTimer();
+    render();
+    return state();
+  }
+
+  function placeFood(){
+    const free = [];
+    for(let y=0;y<G.size;y++) for(let x=0;x<G.size;x++)
+      if(!G.body.some(b=>b.x===x&&b.y===y)) free.push({x,y});
+    G.food = free.length ? free[Math.floor(rng()*free.length)] : null;
+  }
+
+  function collides(x,y,ignoreTail){
+    if(x<0||y<0||x>=G.size||y>=G.size) return "wall";
+    const segs = ignoreTail ? G.body.slice(0,-1) : G.body;
+    return segs.some(b=>b.x===x&&b.y===y) ? "self" : null;
+  }
+
+  function step(){
+    const h = G.body[0], [dx,dy] = DIRS[G.dir], nx = h.x+dx, ny = h.y+dy;
+    const eats = G.food && G.food.x===nx && G.food.y===ny;
+    const hit = collides(nx,ny,!eats);
+    G.tick++;
+    if(hit){ G.alive = false; G.deathReason = hit; stopTimer(); return "died"; }
+    G.body.unshift({x:nx,y:ny});
+    if(eats){ G.score++; placeFood(); return "ate"; }
+    G.body.pop();
+    return "moved";
+  }
+
+  const MAX_INVALID_STREAK = 5;
+  function move(dir, source = "api", ms){
+    const latency = (typeof ms === "number" && isFinite(ms)) ? Math.round(ms) : Math.round(performance.now() - turnStartedAt);
+    dir = String(dir ?? "").toLowerCase().trim();
+    let event;
+    if(!G.alive) event = "game_over";
+    else if(!DIRS[dir] || dir === OPP[G.dir]){ event = "invalid"; G.invalid++; G.invalidStreak = (G.invalidStreak || 0) + 1; }
+    else if(mode() === "realtime"){ G.dir = dir; event = "turned"; G.invalidStreak = 0; }
+    else { G.dir = dir; event = step(); G.invalidStreak = 0; }
+    const forfeit = event === "invalid" && G.invalidStreak > MAX_INVALID_STREAK;
+    if(forfeit){ G.alive = false; G.deathReason = "invalid"; stopTimer(); }
+    const entry = { n:G.history.length+1, tick:G.tick, dir:dir||"?", event, latencyMs:latency, source };
+    G.history.push(entry);
+    logEntry(entry);
+    if(forfeit) logLine(`Game lost: more than ${MAX_INVALID_STREAK} invalid moves in a row.`, "bad");
+    turnStartedAt = performance.now();
+    render();
+    return { ok: ["moved","ate","turned"].includes(event), event, latencyMs:latency, state:state() };
+  }
+
+  // Accepts raw API output: "up", "Move: LEFT", {"move":"down"}, {"answers":{"move":{"choice":"left"}}}, ["up","right"]
+  function findMove(v, depth = 0){
+    if(v == null || depth > 6) return null;
+    if(typeof v === "string"){
+      try{ const p = JSON.parse(v); if(p && typeof p === "object") return findMove(p, depth+1); }catch{}
+      const m = v.toLowerCase().match(/\b(up|down|left|right)\b/);
+      return m ? m[1] : null;
+    }
+    if(typeof v !== "object") return null;
+    for(const k of ["move","choice","answer","answers","direction","action","value","selected"])
+      if(k in v){ const r = findMove(v[k], depth+1); if(r) return r; }
+    for(const val of Object.values(v)){ const r = findMove(val, depth+1); if(r) return r; }
+    return null;
+  }
+  function apply(raw, opts){
+    const ms = typeof opts === "number" ? opts : opts?.ms;
+    let v = raw;
+    if(typeof v === "string"){ try{ v = JSON.parse(v); }catch{} }
+    if(Array.isArray(v)) return v.map(d => apply(d, opts));
+    const dir = findMove(v);
+    return move(dir ?? (typeof raw === "string" ? raw : JSON.stringify(raw)), "apply", ms);
+  }
+
+  // ---------- world description ----------
+  function neighbours(){
+    const h = G.body[0], out = {};
+    for(const [d,[dx,dy]] of Object.entries(DIRS)){
+      const x = h.x+dx, y = h.y+dy;
+      const eats = G.food && G.food.x===x && G.food.y===y;
+      out[d] = d === OPP[G.dir] ? "reverse" : (collides(x,y,!eats) || (eats ? "food" : "empty"));
+    }
+    return out;
+  }
+
+  function ascii(){
+    const rows = [];
+    for(let y=0;y<G.size;y++){
+      let r = "";
+      for(let x=0;x<G.size;x++){
+        const i = G.body.findIndex(b=>b.x===x&&b.y===y);
+        r += i===0 ? "H" : i>0 ? "o" : (G.food && G.food.x===x && G.food.y===y) ? "F" : ".";
+      }
+      rows.push(r);
+    }
+    return rows.join("\n");
+  }
+
+  function state(){
+    const h = G.body[0], n = neighbours();
+    return {
+      alive:G.alive, deathReason:G.deathReason, tick:G.tick, score:G.score,
+      grid:{ width:G.size, height:G.size, origin:"top-left", xRight:true, yDown:true },
+      direction:G.dir, head:{...h}, body:G.body.map(b=>({...b})), length:G.body.length,
+      food:G.food && {...G.food},
+      foodDelta:G.food && { dx:G.food.x-h.x, dy:G.food.y-h.y },
+      surroundings:n,
+      safeMoves:Object.keys(n).filter(d=>n[d]==="empty"||n[d]==="food"),
+      ascii:ascii(), invalidMoves:G.invalid, seed:G.seed
+    };
+  }
+
+  const RULES = [
+    "You are playing Snake. Goal: eat as much food as possible without dying.",
+    "",
+    "RULES",
+    "- Square grid. (0,0) is the top-left corner. x increases to the right, y increases downward.",
+    "- Each move advances the snake exactly one cell.",
+    "- You die if your head leaves the board (wall) or hits your own body.",
+    "- The tail moves forward when you move, so the tail's cell is free that turn (unless you eat).",
+    "- Eating food (F) grows the snake by one cell; new food appears.",
+    "- Reversing 180° (opposite to current direction) is an invalid move.",
+    "",
+    "LEGEND: H = head, o = body, F = food, . = empty"
+  ].join("\n");
+
+  const QUESTIONS = {
+    move: {
+      type: "choice",
+      instructions: "Which move should the snake make next? Avoid walls, your own body and 180° reversals; among safe moves, prefer the one that gets closer to the food without trapping yourself.",
+      criteria: {
+        up: "Move one cell up (y-1)",
+        down: "Move one cell down (y+1)",
+        left: "Move one cell left (x-1)",
+        right: "Move one cell right (x+1)"
+      }
+    }
+  };
+
+  function stateText(){
+    const s = state();
+    const lines = [
+      "STATE",
+      `Board ${s.grid.width}x${s.grid.height}:`,
+      s.ascii,
+      `Head: (${s.head.x},${s.head.y})`,
+      `Direction: ${s.direction}`,
+      `Body (head first): ${s.body.map(b=>`(${b.x},${b.y})`).join(" ")}`,
+      `Food: ${s.food ? `(${s.food.x},${s.food.y})` : "none"}`,
+      `Length: ${s.length} | Score: ${s.score} | Tick: ${s.tick}`
+    ];
+    if(hints){
+      lines.push(`Food offset from head: dx=${s.foodDelta?.dx}, dy=${s.foodDelta?.dy}`);
+      lines.push(`Surroundings: ${Object.entries(s.surroundings).map(([k,v])=>`${k}=${v}`).join(", ")}`);
+    }
+    return lines.join("\n");
+  }
+  function prompt(){ return RULES + "\n\n" + stateText(); }
+  const CHAT_RULES = [
+    "You are an expert Snake player. Each turn you receive the current board and must choose the next move.",
+    "",
+    "COORDINATES",
+    "- (0,0) is the top-left corner. x is the column (grows to the right), y is the row (grows downward).",
+    "- The board is printed with column numbers on top and row numbers on the left.",
+    "- up = (x, y-1), down = (x, y+1), left = (x-1, y), right = (x+1, y).",
+    "",
+    "RULES",
+    "- Each move advances the head one cell; the rest of the body follows.",
+    "- You die if the head goes outside the board (x or y below 0 or above the last index) or onto your own body.",
+    "- The tail cell becomes free this turn, so moving onto the current tail is safe (unless you also eat).",
+    "- Eating the food (F) grows the snake by one cell and spawns new food elsewhere.",
+    "- Moving opposite to your current direction is not allowed.",
+    "",
+    "BOARD LEGEND",
+    "H = head, o = body, T = tail, F = food, . = empty",
+    "",
+    "HOW TO CHOOSE",
+    "1. Never pick a move into a wall, into your body or opposite to your current direction.",
+    "2. Among the remaining moves, prefer the one that reduces the distance to the food.",
+    "3. If two moves are equally good, pick the one that leaves more free space ahead, so you do not trap yourself.",
+    "4. If the move list below gives an outcome for each move, trust it: it is computed exactly from the board."
+  ].join("\n");
+  const CHAT_SYSTEM = CHAT_RULES + "\n\nOUTPUT\nReply with exactly one lowercase word: up, down, left or right. No punctuation, no explanation.";
+
+  // Board with coordinate labels, tail marked as T
+  function labeledBoard(){
+    const N = G.size, w = String(N-1).length + 1;
+    const cell = (x,y) => {
+      const i = G.body.findIndex(b=>b.x===x&&b.y===y);
+      if(i===0) return "H";
+      if(i>0) return i===G.body.length-1 ? "T" : "o";
+      return (G.food && G.food.x===x && G.food.y===y) ? "F" : ".";
+    };
+    const rows = [" ".repeat(w) + Array.from({length:N},(_,x)=>String(x).padStart(w)).join("")];
+    for(let y=0;y<N;y++) rows.push(String(y).padStart(w) + Array.from({length:N},(_,x)=>cell(x,y).padStart(w)).join(""));
+    return rows.join("\n");
+  }
+
+  // Exact outcome of each move: target cell, what is there, food distance, reachable free space
+  function moveOptions(){
+    const h = G.body[0], out = {};
+    for(const [d,[dx,dy]] of Object.entries(DIRS)){
+      const x = h.x+dx, y = h.y+dy;
+      const o = { cell:[x,y] };
+      if(d === OPP[G.dir]){ o.result = "not allowed (reverse)"; out[d] = o; continue; }
+      const eats = G.food && G.food.x===x && G.food.y===y;
+      const hit = collides(x,y,!eats);
+      if(hit){ o.result = hit === "wall" ? "death (wall)" : "death (hits body)"; out[d] = o; continue; }
+      o.result = eats ? "eats food" : "safe";
+      if(G.food) o.foodDistance = Math.abs(G.food.x-x) + Math.abs(G.food.y-y);
+      const body = [{x,y}, ...(eats ? G.body : G.body.slice(0,-1))];
+      const blocked = new Set(body.map(b=>b.x+","+b.y));
+      const seen = new Set([x+","+y]), q = [[x,y]];
+      let free = 0;
+      while(q.length){
+        const [cx,cy] = q.shift();
+        for(const [ex,ey] of Object.values(DIRS)){
+          const nx = cx+ex, ny = cy+ey, k = nx+","+ny;
+          if(nx<0||ny<0||nx>=G.size||ny>=G.size||blocked.has(k)||seen.has(k)) continue;
+          seen.add(k); free++; q.push([nx,ny]);
+        }
+      }
+      o.freeSpace = free;
+      out[d] = o;
+    }
+    return out;
+  }
+  function describeOption(d, o){
+    let t = `${d} -> (${o.cell[0]},${o.cell[1]}): ${o.result}`;
+    if(o.foodDistance != null) t += `, food distance ${o.foodDistance}`;
+    if(o.freeSpace != null) t += `, ${o.freeSpace} free cells reachable`;
+    return t;
+  }
+
+  function chatUserText(ask = true){
+    const s = state();
+    const tail = s.body[s.body.length-1];
+    const lines = [
+      `Turn ${s.tick + 1} · Score ${s.score} · Length ${s.length} · Current direction: ${s.direction}`,
+      "",
+      `Board ${s.grid.width}x${s.grid.height} (valid x and y: 0 to ${s.grid.width-1}):`,
+      labeledBoard(),
+      "",
+      `Head: (${s.head.x},${s.head.y})`,
+      `Tail: (${tail.x},${tail.y})`,
+      `Body (head first): ${s.body.map(b=>`(${b.x},${b.y})`).join(" ")}`,
+      `Food: ${s.food ? `(${s.food.x},${s.food.y})` : "none"}`
+    ];
+    if(hints){
+      const dist = s.food ? Math.abs(s.foodDelta.dx) + Math.abs(s.foodDelta.dy) : null;
+      lines.push(`Food offset from head: dx=${s.foodDelta?.dx}, dy=${s.foodDelta?.dy} (distance now: ${dist})`);
+      lines.push("", "Outcome of each move:");
+      for(const [d,o] of Object.entries(moveOptions())) lines.push("- " + describeOption(d,o));
+    }
+    if(ask) lines.push("", "Your move?");
+    return lines.join("\n");
+  }
+  // Same information as the chat-completions request: rules/strategy + the current turn
+  function decisionsState(){
+    return { rules: CHAT_RULES, current_turn: chatUserText(false) };
+  }
+  function buildPayload(){
+    const m = cfg.model;
+    if(cfg.format === "decisions"){
+      let questions = QUESTIONS;
+      if(hints){
+        const opts = moveOptions(), criteria = {};
+        for(const [d,o] of Object.entries(opts)) criteria[d] = describeOption(d,o);
+        questions = { move: { ...QUESTIONS.move, criteria } };
+      }
+      return { model: m || "", questions, state: decisionsState() };
+    }
+    if(cfg.format === "custom") return m ? { model: m, state: prompt(), questions: QUESTIONS } : { state: prompt(), questions: QUESTIONS };
+    return { model: m || "", temperature: 0, messages: [
+      { role: "system", content: CHAT_SYSTEM },
+      { role: "user", content: chatUserText() }
+    ] };
+  }
+  function payload(){ turnStartedAt = performance.now(); return buildPayload(); }
+  function setHints(v){ hints = !!v; $("hints").checked = hints; render(); return hints; }
+
+  // ---------- stats ----------
+  function stats(){
+    const xs = G.history.filter(h=>h.event!=="game_over").map(h=>h.latencyMs);
+    const s = [...xs].sort((a,b)=>a-b);
+    const q = p => { if(!s.length) return null; const i=(s.length-1)*p, lo=Math.floor(i), hi=Math.ceil(i); return Math.round(s[lo]+(s[hi]-s[lo])*(i-lo)); };
+    return {
+      score:G.score, alive:G.alive, deathReason:G.deathReason, tick:G.tick, length:G.body.length,
+      invalidMoves:G.invalid, requests:xs.length, costUsd:G.cost,
+      accuracyPct: xs.length ? Math.round((xs.length - G.invalid) / xs.length * 100) : null,
+      ticksPerFood: G.score ? +(G.tick / G.score).toFixed(1) : null,
+      foodDistance: G.food ? Math.abs(G.food.x - G.body[0].x) + Math.abs(G.food.y - G.body[0].y) : null,
+      latencyMs:{ last: xs.length ? xs[xs.length-1] : null,
+                  mean: xs.length ? Math.round(xs.reduce((a,b)=>a+b,0)/xs.length) : null,
+                  p50:q(.5), p90:q(.9) }
+    };
+  }
+
+  // ---------- realtime ----------
+  function mode(){ return $("mode").value; }
+  function stopTimer(){ if(timer){ clearInterval(timer); timer = null; } }
+  function startTimer(ms = 220){
+    stopTimer();
+    timer = setInterval(()=>{ if(!G.alive) return; const e = step(); if(e!=="moved") logLine(`tick → ${e}`, e==="died"?"bad":"ok"); render(); }, ms);
+  }
+  function setMode(m, ms){ $("mode").value = m; (m==="realtime" && G.alive) ? startTimer(ms) : stopTimer(); return m; }
+
+  // ---------- render ----------
+  const cv = $("board"), ctx = cv.getContext("2d");
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const fmt = n => n==null ? "–" : n.toLocaleString("en-US");
+
+  function drawBoard(){
+    const N = G.size, c = cv.width/N, pad = Math.max(1, c*0.07);
+    ctx.fillStyle = css("--board"); ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.fillStyle = css("--cell");
+    for(let y=0;y<N;y++) for(let x=0;x<N;x++) ctx.fillRect(x*c+pad, y*c+pad, c-2*pad, c-2*pad);
+    if(G.food){
+      ctx.fillStyle = css("--food");
+      ctx.beginPath(); ctx.arc(G.food.x*c+c/2, G.food.y*c+c/2, c*0.32, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = G.alive ? 1 : .45;
+    for(let i=G.body.length-1;i>=0;i--){
+      const b = G.body[i];
+      ctx.fillStyle = G.alive ? (i===0 ? css("--head") : css("--snake")) : css("--bad");
+      ctx.fillRect(b.x*c+pad, b.y*c+pad, c-2*pad, c-2*pad);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSpark(st){
+    const svg = $("spark"), W = 300, H = 46, SLOTS = 40;
+    const xs = G.history.filter(h=>h.event!=="game_over").slice(-SLOTS);
+    $("sparkEmpty").hidden = xs.length > 0;
+    if(!xs.length){ svg.innerHTML = ""; return; }
+    const max = Math.max(...xs.map(h=>h.latencyMs), st.latencyMs.p50 || 0, 1) * 1.1;
+    const slot = W/SLOTS, bw = Math.max(1, slot-2);
+    let out = "";
+    xs.forEach((h,i)=>{
+      const bh = Math.max(2, h.latencyMs/max*H);
+      const x = W - (xs.length-i)*slot + 1;
+      const color = h.event==="invalid" ? "--warn" : i===xs.length-1 ? "--stat" : "--spark";
+      out += `<rect x="${x}" y="${H-bh}" width="${bw}" height="${bh}" style="fill:var(${color})"><title>#${h.n} · ${h.dir} · ${h.event} · ${h.latencyMs} ms</title></rect>`;
+    });
+    const y = H - st.latencyMs.p50/max*H;
+    out += `<line x1="0" x2="${W}" y1="${y}" y2="${y}" style="stroke:var(--fg);opacity:.6" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"></line>`;
+    svg.innerHTML = out;
+  }
+
+  function render(){
+    drawBoard();
+    const s = state(), st = stats();
+    $("ascii").textContent = s.ascii;
+    $("payloadOut").textContent = JSON.stringify(buildPayload(), null, 2);
+    const { ascii:_, ...rest } = s;
+    $("stateOut").textContent = JSON.stringify(rest, null, 2);
+    $("sScore").textContent = fmt(G.score);
+    $("sTick").textContent = fmt(G.tick);
+    $("sLen").textContent = fmt(G.body.length);
+    $("sInvalid").textContent = fmt(G.invalid);
+    $("sAcc").textContent = fmt(st.accuracyPct);
+    $("sTpf").textContent = fmt(st.ticksPerFood);
+    $("sCost").textContent = st.costUsd == null ? "–" : (st.costUsd < 0.01 ? st.costUsd.toFixed(5) : st.costUsd.toFixed(4));
+    $("sAvg").textContent = fmt(st.latencyMs.mean);
+    $("sP50").textContent = fmt(st.latencyMs.p50);
+    $("sN").textContent = fmt(st.requests);
+    const pill = $("status");
+    pill.textContent = G.alive ? "Playing" : `Over · ${G.deathReason==="wall" ? "hit the wall" : G.deathReason==="invalid" ? "too many invalid moves" : "bit itself"}`;
+    pill.className = "pill " + (G.alive ? "alive" : "dead");
+    document.body.classList.toggle("game-over", !G.alive);
+    drawSpark(st);
+  }
+
+  function logLine(t, cls = ""){
+    const d = document.createElement("div");
+    d.className = "log-note" + (cls ? " " + cls : "");
+    d.textContent = t;
+    $("log").prepend(d);
+  }
+
+  const EVENT_LABEL = { moved:"moved", ate:"ate", died:"died", invalid:"invalid", game_over:"over", turned:"turned" };
+  const EVENT_TONE  = { ate:"ok", died:"bad", game_over:"bad", invalid:"warn" };
+  const LOG_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+  function logEntry(e){
+    const row = document.createElement("div");
+    row.className = "log-row";
+    const n = document.createElement("span"); n.className = "log-n"; n.textContent = "#" + e.n;
+    const dir = document.createElement("span"); dir.className = "log-dir";
+    if(DIRS[e.dir]) dir.innerHTML = `<i class="rot-${e.dir}">${LOG_ARROW}</i>`;
+    dir.append(e.dir);
+    const chip = document.createElement("span");
+    chip.className = "chip " + (EVENT_TONE[e.event] || "");
+    chip.textContent = EVENT_LABEL[e.event] || e.event;
+    const ms = document.createElement("span"); ms.className = "log-ms"; ms.textContent = `${e.latencyMs.toLocaleString("en-US")} ms`;
+    row.append(n, dir, chip, ms);
+    $("log").prepend(row);
+  }
+
+  // ---------- copy buttons ----------
+  const ICONS = '<svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>'
+              + '<svg class="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+  const COPY = {
+    payload: () => JSON.stringify(payload()),
+    state:   () => JSON.stringify(state()),
+    ascii:   () => ascii(),
+    log:     () => JSON.stringify(G.history, null, 2)
+  };
+  function flash(btn, msg){
+    btn.classList.add("done"); btn.title = msg; btn.setAttribute("aria-label", msg);
+    clearTimeout(btn._t);
+    btn._t = setTimeout(()=>{ btn.classList.remove("done"); btn.title = "Copy"; btn.setAttribute("aria-label","Copy"); }, 1400);
+  }
+  document.querySelectorAll(".copy").forEach(btn => {
+    btn.innerHTML = ICONS;
+    btn.addEventListener("click", async () => {
+      const text = COPY[btn.dataset.copy]();
+      try{ await navigator.clipboard.writeText(text); flash(btn, "Copied"); }
+      catch{
+        const box = btn.parentElement.querySelector("pre, .log");
+        try{ getSelection().selectAllChildren(box); }catch{}
+        flash(btn, "Text selected: press Ctrl+C");
+      }
+    });
+  });
+
+  // ---------- inputs ----------
+  function runCommand(text, ms){
+    const t = text.trim(); if(!t) return;
+    const low = t.toLowerCase().replace(/\(\)$/,"").replace(/^snake\./,"");
+    if(DIRS[low]) return move(low, "console", ms);
+    if(low === "reset") return reset();
+    return apply(t, { ms });
+  }
+  $("cmdForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const msVal = $("cmdMs").value.trim();
+    runCommand($("cmd").value, msVal === "" ? undefined : +msVal);
+    $("cmd").select();
+  });
+  const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+  document.querySelectorAll("[data-dir]").forEach(b => { b.innerHTML = ARROW; b.addEventListener("click", () => move(b.dataset.dir, "button")); });
+  $("resetBtn").addEventListener("click", () => { stopAuto(); reset(); });
+
+  // ---------- API auto-play ----------
+  const CFG_KEY = "snake-arena-api";
+  let cfg = { url:"", key:"", model:"", format:"chat" }, running = false, abortCtl = null;
+  try{ Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }catch{}
+  // The endpoint decides the body shape: a /decisions URL needs {questions, state}, a /chat/completions URL needs {messages}
+  function formatForUrl(url, chosen){
+    const u = (url || "").replace(/\/+$/, "");
+    if(/\/decisions$/.test(u) && chosen === "chat") return "decisions";
+    if(/\/chat\/completions$/.test(u) && chosen !== "chat") return "chat";
+    return chosen;
+  }
+  { const f = formatForUrl(cfg.url, cfg.format); if(f !== cfg.format){ cfg.format = f; try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch{} } }
+  const ready = () => !!(cfg.url && cfg.key && (cfg.format === "custom" || cfg.model));
+  function endpoint(){
+    let u = cfg.url.replace(/\/+$/, "");
+    if(cfg.format === "decisions"){ if(!/\/decisions$/.test(u)) u = u.replace(/\/(v1|alpha)$/, "") + "/alpha/decisions"; }
+    else if(cfg.format === "chat" && /\/v1$/.test(u)) u += "/chat/completions";
+    return u;
+  }
+  function setAuto(t, cls = ""){ $("autoStatus").textContent = t; $("autoStatus").className = "caption " + cls; }
+  function updateApiUi(){
+    $("apiDot").hidden = !ready();
+    if(!running) setAuto(ready() ? "Ready to play" : "Set up the API to play");
+  }
+  function toggleBtns(){ $("playBtn").disabled = running; $("stepBtn").disabled = running; $("stopBtn").disabled = !running; }
+
+  const TIMEOUT_MS = 60000;
+  const mask = k => k ? (k.length > 10 ? k.slice(0,6) + "…" + k.slice(-4) : "***") : "(empty)";
+  function dbg(...a){
+    const out = a.map(v => {
+      if(v instanceof Error) return `${v.name}: ${v.message}`;
+      if(v && typeof v === "object"){ try{ return JSON.stringify(v); }catch{ return String(v); } }
+      return v;
+    });
+    console.log("[snake-arena DEBUG]", ...out);
+  }
+  async function requestMove(){
+    const body = JSON.stringify(payload());
+    abortCtl = new AbortController();
+    const ctl = abortCtl, t0 = performance.now(), turn = G.tick + 1;
+    let timedOut = false;
+    dbg(`turn ${turn} → POST ${endpoint()}`, { format: cfg.format, model: cfg.model, key: mask(cfg.key), body: JSON.parse(body) });
+    const killer = setTimeout(() => { timedOut = true; ctl.abort(); }, TIMEOUT_MS);
+    const ticker = setInterval(() => setAuto(`Waiting for response · turn ${turn} · ${((performance.now()-t0)/1000).toFixed(1)} s`), 100);
+    try{
+      let res;
+      try{
+        res = await fetch(endpoint(), { method:"POST", body, signal:ctl.signal,
+          headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${cfg.key}` } });
+      }catch(e){
+        dbg(`turn ${turn} ✖ fetch failed after ${Math.round(performance.now()-t0)} ms`, e);
+        if(timedOut) throw new Error(`No response in ${TIMEOUT_MS/1000} s from ${endpoint()}. Check the endpoint and the model, or open the browser console (Network tab).`);
+        if(e.name === "AbortError") throw e;
+        throw new Error("blocked");
+      }
+      dbg(`turn ${turn} ← HTTP ${res.status} headers in ${Math.round(performance.now()-t0)} ms, waiting for the body…`, Object.fromEntries(res.headers.entries()));
+      let text = "";
+      if(res.body && res.body.getReader){
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        let chunk = 0;
+        for(;;){
+          const { done, value } = await reader.read();
+          if(done) break;
+          const part = dec.decode(value, { stream:true });
+          text += part; chunk++;
+          dbg(`turn ${turn} chunk ${chunk}: ${value.length} bytes at ${Math.round(performance.now()-t0)} ms${part.trim() ? "" : " (whitespace only: the server is still processing)"}`);
+        }
+        text += dec.decode();
+      } else {
+        text = await res.text();
+      }
+      const ms = performance.now() - t0;
+      dbg(`turn ${turn} full body in ${Math.round(ms)} ms:`, text.trim());
+      if(!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
+      let data = text; try{ data = JSON.parse(text); }catch{}
+      if(cfg.format === "decisions" && data && typeof data === "object"){
+        const ans = data.answers?.move;
+        if(!ans) throw new Error("Response without answers.move: " + text.slice(0,200));
+        dbg(`turn ${turn} decision:`, ans.choice, { confidence: ans.confidence, probabilities: ans.probabilities });
+      }
+      if(cfg.format === "chat" && data && typeof data === "object"){
+        const content = data.choices?.[0]?.message?.content;
+        if(typeof content !== "string" || !content.trim()) throw new Error("Response without text: " + text.slice(0,200));
+        data = content;
+        dbg(`turn ${turn} model content:`, JSON.stringify(content), "usage:", data_usage(text));
+      }
+      const cost = (raw => { try{ const c = JSON.parse(raw)?.usage?.cost; return typeof c === "number" ? c : null; }catch{ return null; } })(text);
+      if(cost != null){ G.cost = (G.cost || 0) + cost; dbg(`turn ${turn} cost: $${cost} · total: $${G.cost}`); }
+      const result = apply(data, { ms });
+      if(cost != null){ const h = G.history.at(-1); if(h) h.costUsd = cost; }
+      dbg(`turn ${turn} move applied: ${result.event}`, { dir: G.history.at(-1)?.dir, latencyMs: result.latencyMs, score: G.score, alive: G.alive });
+      return result;
+    }catch(e){
+      dbg(`turn ${turn} error:`, e.message || e);
+      if(timedOut && e.name === "AbortError") throw new Error(`No response in ${TIMEOUT_MS/1000} s.`);
+      throw e;
+    }finally{
+      clearTimeout(killer); clearInterval(ticker);
+    }
+  }
+
+  function data_usage(text){ try{ return JSON.parse(text).usage ?? null; }catch{ return null; } }
+  async function playTurns(n){
+    dbg(`playTurns(${n === Infinity ? "∞" : n})`, { ready: ready(), endpoint: cfg.url ? endpoint() : null, format: cfg.format, model: cfg.model, key: mask(cfg.key) });
+    if(running) return;
+    if(!ready()){
+      const missing = [!cfg.url && "endpoint", !cfg.key && "API key", (cfg.format !== "custom" && !cfg.model) && "model ID"].filter(Boolean);
+      const msg = `Missing ${missing.join(", ")} in API key`;
+      setAuto(msg, "bad");
+      logLine(`${msg}. Fill it in and press Save.`, "bad");
+      dbg("cannot play:", missing);
+      setTimeout(openPanel, 0);   // after this click finishes, so the outside-click handler does not close it
+      return;
+    }
+    if(!G.alive) reset();
+    if(mode() === "realtime"){
+      setMode("turn");
+      logLine("Auto-play uses turn-based mode: in real time the snake keeps moving while the model thinks, and it decides on a board that has already changed.");
+    }
+    running = true; toggleBtns();
+    let done = 0;
+    try{
+      while(running && G.alive && done < n){
+        await requestMove(); done++;
+      }
+      if(running || !G.alive) setAuto(G.alive ? `Paused after ${done} turn${done===1?"":"s"}` : `Game over · ${G.score} points`);
+    }catch(e){
+      if(e.name === "AbortError") setAuto("Stopped");
+      else if(e.message === "blocked"){
+        setAuto("The request didn't go out", "bad");
+        logLine("The request didn't go out: browser block, CORS or network. Inside the artifact external APIs are blocked; open the HTML from your repo.", "bad");
+      } else { setAuto("API error", "bad"); logLine(e.message, "bad"); }
+    }
+    running = false; abortCtl = null; toggleBtns();
+  }
+  function stopAuto(){ if(!running) return; dbg("Stop pressed"); running = false; abortCtl?.abort(); setAuto("Stopped"); }
+
+
+  $("playBtn").addEventListener("click", () => playTurns(Infinity));
+  $("stepBtn").addEventListener("click", () => playTurns(1));
+  $("stopBtn").addEventListener("click", stopAuto);
+
+  const panel = $("apiPanel");
+  function openPanel(){
+    $("apiUrl").value = cfg.url; $("apiKey").value = cfg.key; $("apiModel").value = cfg.model || ""; $("apiFormat").value = cfg.format || "chat"; syncUrlPlaceholder();
+    panel.hidden = false; $("apiBtn").setAttribute("aria-expanded","true"); $("apiUrl").focus();
+  }
+  function closePanel(){ panel.hidden = true; $("apiBtn").setAttribute("aria-expanded","false"); }
+  $("apiBtn").addEventListener("click", () => panel.hidden ? openPanel() : closePanel());
+  const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+  const URL_PLACEHOLDER = { chat:"https://api.example.com/v1/chat/completions", decisions:DECISIONS_URL, custom:"https://api.example.com/v1/decisions" };
+  function syncUrlPlaceholder(){ $("apiUrl").placeholder = URL_PLACEHOLDER[$("apiFormat").value] || ""; }
+  $("apiFormat").addEventListener("change", () => {
+    const f = $("apiFormat").value, url = $("apiUrl");
+    if(f === "decisions") url.value = DECISIONS_URL;
+    else if(url.value.trim() === DECISIONS_URL) url.value = "";
+    syncUrlPlaceholder();
+  });
+  $("apiClose").addEventListener("click", () => { closePanel(); $("apiBtn").focus(); });
+  $("apiShow").addEventListener("click", e => {
+    const k = $("apiKey"); k.type = k.type === "password" ? "text" : "password";
+    e.currentTarget.textContent = k.type === "password" ? "Show" : "Hide";
+  });
+  panel.addEventListener("submit", e => {
+    e.preventDefault();
+    cfg = { url:$("apiUrl").value.trim(), key:$("apiKey").value.trim(), model:$("apiModel").value.trim(), format:$("apiFormat").value };
+    const fixed = formatForUrl(cfg.url, cfg.format);
+    if(fixed !== cfg.format){
+      logLine(`The endpoint doesn't match the chosen format: using ${fixed === "decisions" ? "OpenRouter Decisions" : "OpenAI (chat completions)"}.`);
+      cfg.format = fixed; $("apiFormat").value = fixed;
+    }
+    try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch{}
+    updateApiUi(); render(); closePanel();
+  });
+  $("apiClear").addEventListener("click", () => {
+    cfg = { url:"", key:"", model:"", format:"chat" };
+    try{ localStorage.removeItem(CFG_KEY); }catch{}
+    render();
+    $("apiUrl").value = ""; $("apiKey").value = ""; $("apiModel").value = ""; $("apiFormat").value = "chat";
+    updateApiUi();
+  });
+  const setPanel = $("setPanel");
+  function openSet(){ closePanel(); setPanel.hidden = false; $("setBtn").setAttribute("aria-expanded","true"); $("seed").focus(); }
+  function closeSet(){ setPanel.hidden = true; $("setBtn").setAttribute("aria-expanded","false"); }
+  $("setBtn").addEventListener("click", () => setPanel.hidden ? openSet() : closeSet());
+  $("setClose").addEventListener("click", () => { closeSet(); $("setBtn").focus(); });
+  $("apiBtn").addEventListener("click", () => closeSet());
+  document.addEventListener("click", e => {
+    if(!panel.hidden && !$("apiWrap").contains(e.target)) closePanel();
+    if(!setPanel.hidden && !$("setWrap").contains(e.target)) closeSet();
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key !== "Escape") return;
+    if(!panel.hidden){ closePanel(); $("apiBtn").focus(); }
+    if(!setPanel.hidden){ closeSet(); $("setBtn").focus(); }
+  });
+  updateApiUi();
+  dbg("config loaded", { format: cfg.format, endpoint: cfg.url ? endpoint() : "(empty)", model: cfg.model || "(empty)", key: mask(cfg.key), origin: location.origin });
+  $("mode").addEventListener("change", e => setMode(e.target.value));
+  $("hints").addEventListener("change", e => setHints(e.target.checked));
+  document.addEventListener("keydown", e => {
+    if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName)) return;
+    const k = {ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"}[e.key];
+    if(k){ e.preventDefault(); move(k, "keyboard"); }
+  });
+  try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => render()); }catch{}
+  new MutationObserver(() => render()).observe(document.documentElement, { attributes:true, attributeFilter:["data-theme"] });
+
+  const api = {
+    up:()=>move("up"), down:()=>move("down"), left:()=>move("left"), right:()=>move("right"),
+    move, apply, state, stats, prompt, payload, setHints, reset, setMode,
+    history:() => G.history.map(h=>({...h}))
+  };
+  const IC = {
+    reset:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    play:'<path d="M7 4v16l13-8z"/>',
+    step:'<path d="M5 4v16l10-8z"/><path d="M19 5v14"/>',
+    stop:'<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+    apply:'<path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
+    check:'<path d="M20 6 9 17l-5-5"/>',
+    trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+    trophy:'<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/>',
+    gamepad:'<rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4"/><path d="M8 10v4"/><path d="M15 11h.01"/><path d="M18 13h.01"/>',
+    timer:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/>',
+    bot:'<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4"/><path d="M9 13v2"/><path d="M15 13v2"/>',
+    message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    grid:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+    braces:'<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+    sliders:'<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+    key:'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>'
+  };
+  document.querySelectorAll("[data-icon]").forEach(el => {
+    const d = IC[el.dataset.icon]; if(!d) return;
+    el.insertAdjacentHTML("afterbegin", `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`);
+  });
+  window.snake = api;
+  Object.assign(window, { up:api.up, down:api.down, left:api.left, right:api.right });
+  reset();
+})();
+</script>
+
+</body>
+</html>
